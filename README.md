@@ -64,61 +64,60 @@ GOOGLE_CLOUD_PROJECT="your-project-id"
 
 ### Usage
 
+The easiest way to process a video is using the end-to-end `run` command.
+
+**Full Pipeline (Transcribe -> Format -> Translate)**
+```bash
+uv run autosub run path/to/video.mp4 --profile date_sayuri
+```
+This will automatically generate three files in the video's directory: `transcript.json`, `original.ass`, and `translated.ass`.
+
+#### Unified Profiles (TOML)
+`autosub` uses a powerful, composable profile system powered by TOML. You can configure custom vocabulary (to help Chirp 3 recognize domain-specific names) and LLM translation instructions (to guide Gemini's tone) in a single file located in the `profiles/` directory!
+
+Example `profiles/date_sayuri.toml`:
+```toml
+# Inherits rules and vocab from another profile!
+extends = ["base_radio_profile"]
+
+# Points to an external markdown file for LLM instructions
+prompt = "prompts/date_sayuri.md"
+
+# Custom hints for Speech-to-Text
+vocab = [
+    "Date Sayuri",
+    "Sayurin"
+]
+```
+
+By passing `--profile date_sayuri`, the pipeline will automatically apply these settings to both the transcription and translation stages.
+
+---
+
+### Individual Step Execution
+
+You can also run each step of the pipeline manually. All commands accept the `--profile` argument.
+
 **Step 1: Transcribe Audio**
-You can use the built-in CLI to run the Speech-to-Text module. This will extract the audio from your video, process it via Google Cloud Chirp 3, and save a word-level timestamped `.json` transcript.
-
+Extracts the audio, processes it via Google Cloud Chirp 3, and saves a timestamped `.json` transcript.
 ```bash
-uv run autosub transcribe path/to/video.mp4 --out transcript.json
+uv run autosub transcribe video.mp4 --out transcript.json --profile date_sayuri
 ```
-
-**Advanced Transcription (Custom Vocabulary)**
-If your audio contains domain-specific terminology, proper nouns, or unique vocabulary (e.g. VTuber agency names, lore terms), you can provide "hints" to improve the Chirp 3 API's transcription accuracy using Google Cloud Speech Adaptation.
-
-Pass individual words via the command line:
-```bash
-uv run autosub transcribe video.mp4 -v "Hololive" -v "Pekora"
-```
-
-Or pass a JSON file containing a list of strings:
-```bash
-uv run autosub transcribe video.mp4 --vocab-file agency_terms.json
-```
+*(You can also pass individual vocabulary hints via `-v "Word"`).*
 
 **Step 2: Subtitle Formatting (.ass)**
-Convert the JSON transcript into a timed `.ass` subtitle file using semantic chunking rules (breaking at punctuation and pauses).
-
+Converts the JSON transcript into a timed `.ass` subtitle file using semantic chunking rules (breaking at punctuation and pauses).
 ```bash
 uv run autosub format transcript.json --out original.ass
 ```
 
 **Step 3: Translation**
-Translate the `.ass` file using a pluggable translation engine. By default, it uses high-quality context-aware translation via **Gemini 2.5 Flash on Vertex AI**.
-
+Translates the `.ass` file using a pluggable translation engine. By default, it uses high-quality context-aware translation via **Gemini 2.5 Flash on Vertex AI**.
 ```bash
-# Basic translation (Default engine: vertex)
-uv run autosub translate original.ass --out translated.ass
-
-# Specify target language
-uv run autosub translate original.ass --target "en" --source "ja"
+uv run autosub translate original.ass --out translated.ass --profile date_sayuri
 ```
 
-**Advanced Translation (LLM Profiles)**
-You can guide the LLM's translation style (e.g., casual, emotional, formal) using a system prompt or a profile file.
-
-```bash
-# Using a custom prompt string
-uv run autosub translate original.ass --prompt "Translate casually like a VTuber livestream."
-
-# Using a profile file (Recommended)
-uv run autosub translate original.ass --prompt-file profiles/date_sayuri.md
-```
-
-Available example profiles:
-- `profiles/date_sayuri.md`: Casual voice actress radio show style.
-- `profiles/liella.md`: Energetic group livestream style.
-- `profiles/concert_mc.md`: Emotional live concert MC style.
-
-**Translation Engines**
+#### Translation Engines
 - `vertex` (Default): Uses Gemini 2.5 Flash for context-aware, high-quality translation.
 - `cloud-v3`: Uses the standard Google Cloud Translation V3 (Literal translation fallback).
 

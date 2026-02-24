@@ -1,21 +1,24 @@
 # Deferred AutoSub Planned Work
 
-This document holds the architectural plans for the next stages of the `autosub` toolchain. These features have been temporarily tabled to focus on refining the core `transcribe` module first.
+With the core MVP (Minimum Viable Product) now complete—featuring a fully connected `autosub run` pipeline that handles Transcription, Formatting, and Translation via the composable TOML `--profile` system—the following architectural plans have been mapped out for Phase 2 of the `autosub` toolchain.
 
-## Goal Description
-Design a modular, testable, and robust architecture for the `autosub` toolchain. Each step (transcription, formatting, translation) must be able to run independently or be chained together in an end-to-end workflow.
+## 1. Multi-Speaker Support & Diarization
+*   **Audio Processing**: Integrate Speaker Diarization (identifying *who* is speaking) into the Transcription module. This may require pre-processing the audio before passing it to Chirp 3, or attempting to leverage Chirp's native diarization features if accuracy improves.
+*   **Profile Expansion**: Expand the TOML profile system to support defining stylistic formatting (colors, fonts, outlines) mapped to specific speakers.
+*   **Dependency Injection**: The Formatting module will need to consume these speaker tags and apply the correct `pyass` styles to the generated events.
 
-## Step 2: Subtitle Formatting (.ass generation)
-The Formatting module's specific responsibility is to merge the individual words from Step 1 (`transcript.json`) and ultimately generate a `.ass` file.
+## 2. Advanced Timing Rules
+Currently, subtitle chunking relies purely on semantic pauses and punctuation. Phase 2 aims to introduce professional visual rules:
+*   Limit text lines on screen to a maximum of 2.
+*   Ensure there are no awkward invisible gaps between consecutive lines (snapping to nearest neighbor if under a threshold).
+*   Implement visual keyframe snapping to ensure subtitles don't pop up during scene transitions.
 
-*   Because many Python `.ass` libraries lack comprehensive documentation or functionality, a prerequisite step will be to select a wrapper library, parse its source code, and generate our own robust documentation (e.g., as an MCP server doc or markdown reference). This guarantees the AI agent can reliably generate correct formatting code against it.
-*   **Input**: `transcript.json` (Array of Pydantic `TranscribedWord` objects)
-*   **Output**: `original.ass`
+## 3. Audio Extraction & Segmentation Pipeline
+*   **Singing Filtering**: Intelligently detect and ignore singing sections in concert videos (e.g. leveraging `spleeter` or similar vocal detection tech), so the primary transcription module exclusively subtitiles the MC / spoken sections.
 
-## Step 3: Translation Module
-The Translation module will take the fully formatted `.ass` file and translate the subtitle lines into the target language.
+## 4. On-Screen Text OCR
+*   **Visual Pipeline**: Implement optical character recognition (OCR) on the raw video footage.
+*   **Integration**: Seamlessly interleave OCR-generated `.ass` lines (e.g., lower thirds, on-screen signs) with the speech-generated `.ass` lines, ensuring visual styles do not clash and timestamps overlap cleanly.
 
-*   This step should use the Google Cloud Translation API.
-*   It should be augmented with a Large Language Model (LLM) for context-aware and natural phrasing, improving upon the literal translations often provided by standard translation APIs.
-*   **Input**: `original.ass`
-*   **Output**: `translated.ass`
+## 5. Web UI or Desktop GUI
+*   Wrap the Typer CLI in a clean interface (e.g. a local React/Next.js dashboard) where users can easily drop videos, select profiles from a visual list, edit TOML/Markdown files directly in a rich text editor, and browse the staging bucket without using the terminal.
