@@ -83,3 +83,45 @@ Or pass a JSON file containing a list of strings:
 ```bash
 uv run autosub transcribe video.mp4 --vocab-file agency_terms.json
 ```
+
+**Step 2: Subtitle Formatting (.ass)**
+Convert the JSON transcript into a timed `.ass` subtitle file using semantic chunking rules (breaking at punctuation and pauses).
+
+```bash
+uv run autosub format transcript.json --out original.ass
+```
+
+**Step 3: Translation**
+Translate the `.ass` file using a pluggable translation engine. By default, it uses high-quality context-aware translation via **Gemini 2.5 Flash on Vertex AI**.
+
+```bash
+# Basic translation (Default engine: vertex)
+uv run autosub translate original.ass --out translated.ass
+
+# Specify target language
+uv run autosub translate original.ass --target "en" --source "ja"
+```
+
+**Advanced Translation (LLM Profiles)**
+You can guide the LLM's translation style (e.g., casual, emotional, formal) using a system prompt or a profile file.
+
+```bash
+# Using a custom prompt string
+uv run autosub translate original.ass --prompt "Translate casually like a VTuber livestream."
+
+# Using a profile file (Recommended)
+uv run autosub translate original.ass --prompt-file profiles/date_sayuri.md
+```
+
+Available example profiles:
+- `profiles/date_sayuri.md`: Casual voice actress radio show style.
+- `profiles/liella.md`: Energetic group livestream style.
+- `profiles/concert_mc.md`: Emotional live concert MC style.
+
+**Translation Engines**
+- `vertex` (Default): Uses Gemini 2.5 Flash for context-aware, high-quality translation.
+- `cloud-v3`: Uses the standard Google Cloud Translation V3 (Literal translation fallback).
+
+```bash
+uv run autosub translate original.ass --engine cloud-v3
+```
