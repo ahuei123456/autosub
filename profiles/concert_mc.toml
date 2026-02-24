@@ -1,4 +1,0 @@
-prompt = "prompts/concert_mc.md"
-vocab = [
-    "Love Live",
-]
