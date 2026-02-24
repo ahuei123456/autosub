@@ -1,11 +1,11 @@
 import typer
 import logging
-import json
 from pathlib import Path
 
 from autosub.pipeline.transcribe import main as transcribe_main
 from autosub.pipeline.format import main as format_module
 from autosub.pipeline.translate import main as translate_module
+from autosub.core.profile import load_unified_profile
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s:%(levelname)s:%(name)s: %(message)s"
@@ -43,10 +43,10 @@ def transcribe(
         "-v",
         help="Custom context terminology to increase probability of recognition (can be passed multiple times).",
     ),
-    vocab_file: Path = typer.Option(
+    profile: str = typer.Option(
         None,
-        "--vocab-file",
-        help="Path to a JSON file containing an array of custom vocabulary strings.",
+        "--profile",
+        help="Profile name to load vocabulary and translation prompt settings.",
     ),
 ):
     """
@@ -54,20 +54,12 @@ def transcribe(
     """
     logger.info(f"Starting transcription pipeline for: {video_path}")
 
-    # Combine CLI vocab and JSON vocab
-    final_vocab = list(vocab) if vocab else []
-    if vocab_file:
-        try:
-            with open(vocab_file, "r", encoding="utf-8") as f:
-                file_vocab = json.load(f)
-                if not isinstance(file_vocab, list):
-                    raise ValueError(
-                        "JSON vocab file must contain an array of strings."
-                    )
-                final_vocab.extend(str(item) for item in file_vocab)
-        except Exception as e:
-            logger.error(f"Failed to load vocab file {vocab_file}: {e}")
-            raise typer.Exit(code=1)
+    final_vocab = []
+    if profile:
+        profile_data = load_unified_profile(profile)
+        final_vocab.extend(profile_data["vocab"])
+    if vocab:
+        final_vocab.extend(vocab)
 
     try:
         result = transcribe_main.transcribe(video_path, output, language, final_vocab)
@@ -126,10 +118,10 @@ def translate(
     prompt: str = typer.Option(
         None, "--prompt", "-p", help="System prompt to guide the LLM translation."
     ),
-    prompt_file: Path = typer.Option(
+    profile: str = typer.Option(
         None,
-        "--prompt-file",
-        help="Path to a text/markdown file containing the system prompt.",
+        "--profile",
+        help="Profile name to load vocabulary and translation prompt settings.",
     ),
     target_lang: str = typer.Option("en", "--target", help="Target language code."),
     source_lang: str = typer.Option("ja", "--source", help="Source language code."),
@@ -145,14 +137,14 @@ def translate(
     if not out:
         out = input_ass.with_name("translated.ass")
 
-    final_prompt = prompt
-    if prompt_file:
-        try:
-            with open(prompt_file, "r", encoding="utf-8") as f:
-                final_prompt = f.read().strip()
-        except Exception as e:
-            logger.error(f"Failed to read prompt file {prompt_file}: {e}")
-            raise typer.Exit(code=1)
+    final_prompt_parts = []
+    if profile:
+        profile_data = load_unified_profile(profile)
+        final_prompt_parts.extend(profile_data["prompt"])
+    if prompt:
+        final_prompt_parts.append(prompt)
+
+    final_prompt = "\n\n".join(final_prompt_parts) if final_prompt_parts else None
 
     try:
         translate_module.translate_subtitles(
@@ -167,6 +159,102 @@ def translate(
     except Exception as e:
         logger.error(f"Error during translation: {e}")
         raise typer.Exit(code=1)
+
+
+@app.command()
+def run(
+    video_path: Path = typer.Argument(
+        ..., help="Path to the input video or audio file"
+    ),
+    out_dir: Path = typer.Option(
+        None,
+        "--out-dir",
+        help="Directory to save generated files. Defaults to the input video's directory.",
+    ),
+    language: str = typer.Option(
+        "ja-JP", "--language", "-l", help="Language code for transcription (e.g. ja-JP)"
+    ),
+    profile: str = typer.Option(
+        None, "--profile", help="Profile name to load vocabulary and prompt settings."
+    ),
+    vocab: list[str] = typer.Option(
+        None, "--vocab", "-v", help="Custom transcription hints."
+    ),
+    engine: str = typer.Option(
+        "vertex", "--engine", "-e", help="Translation engine ('vertex' or 'cloud-v3')."
+    ),
+    prompt: str = typer.Option(
+        None, "--prompt", "-p", help="System prompt to guide the LLM translation."
+    ),
+    target_lang: str = typer.Option("en", "--target", help="Target language code."),
+    source_lang: str = typer.Option("ja", "--source", help="Source language code."),
+    bilingual: bool = typer.Option(
+        False, "--bilingual/--replace", help="Include original text on top."
+    ),
+):
+    """
+    Step 4: Runs the full end-to-end autosub pipeline (Transcribe -> Format -> Translate).
+    """
+    logger.info(f"Starting full autosub pipeline for: {video_path}")
+
+    if not out_dir:
+        out_dir = video_path.parent
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    transcript_out = out_dir / "transcript.json"
+    original_ass_out = out_dir / "original.ass"
+    translated_ass_out = out_dir / "translated.ass"
+
+    # Resolve Profile
+    final_vocab = []
+    final_prompt_parts = []
+    if profile:
+        profile_data = load_unified_profile(profile)
+        final_vocab.extend(profile_data["vocab"])
+        final_prompt_parts.extend(profile_data["prompt"])
+    if vocab:
+        final_vocab.extend(vocab)
+    if prompt:
+        final_prompt_parts.append(prompt)
+
+    final_prompt = "\n\n".join(final_prompt_parts) if final_prompt_parts else None
+
+    # Step 1: Transcribe
+    try:
+        logger.info("[Step 1/3] Transcribing...")
+        transcribe_main.transcribe(video_path, transcript_out, language, final_vocab)
+    except Exception as e:
+        logger.error(f"Failed during transcription: {e}")
+        raise typer.Exit(code=1)
+
+    # Step 2: Format
+    try:
+        logger.info("[Step 2/3] Formatting...")
+        format_module.format_subtitles(transcript_out, original_ass_out)
+    except Exception as e:
+        logger.error(f"Failed during formatting: {e}")
+        raise typer.Exit(code=1)
+
+    # Step 3: Translate
+    try:
+        logger.info("[Step 3/3] Translating...")
+        translate_module.translate_subtitles(
+            original_ass_out,
+            translated_ass_out,
+            engine=engine,
+            system_prompt=final_prompt,
+            target_lang=target_lang,
+            source_lang=source_lang,
+            bilingual=bilingual,
+        )
+    except Exception as e:
+        logger.error(f"Failed during translation: {e}")
+        raise typer.Exit(code=1)
+
+    logger.info(
+        f"Pipeline completed successfully! Final output saved to {translated_ass_out}"
+    )
 
 
 if __name__ == "__main__":
