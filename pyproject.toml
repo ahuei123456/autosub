@@ -1,0 +1,36 @@
+[project]
+name = "autosub"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Michael Yang", email = "michael.kevin@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "ffmpeg-python>=0.2.0",
+    "google-cloud-speech>=2.36.1",
+    "google-cloud-storage>=3.9.0",
+    "google-cloud-translate>=3.24.0",
+    "google-genai>=1.64.0",
+    "pyass>=0.1.4",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.1",
+    "typer>=0.24.1",
+]
+
+[project.scripts]
+autosub = "autosub.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "pre-commit>=4.5.1",
+    "pyrefly>=0.54.0",
+    "pytest>=9.0.2",
+    "ruff>=0.15.2",
+]

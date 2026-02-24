@@ -1,0 +1,38 @@
+ WARN PYTHONPATH environment variable is set to `D:\Projects\lyricsheets`. Checks in other environments may not include these paths.
+ERROR Argument `str | None` is not assignable to parameter `project_id` with type `str` in function `autosub.pipeline.transcribe.api.transcribe_uri` [bad-argument-type]
+  --> src\autosub\pipeline\transcribe\main.py:38:56
+   |
+38 |                 response = api.transcribe_uri(gcs_uri, PROJECT_ID, language_code, vocabulary)
+   |                                                        ^^^^^^^^^^
+   |
+ERROR Argument `str | None` is not assignable to parameter `project_id` with type `str` in function `autosub.pipeline.transcribe.api.transcribe_local_file` [bad-argument-type]
+  --> src\autosub\pipeline\transcribe\main.py:59:65
+   |
+59 |             response = api.transcribe_local_file(audio_content, PROJECT_ID, language_code, vocabulary)
+   |                                                                 ^^^^^^^^^^
+   |
+ERROR No attribute `EventText` in module `pyass` [missing-attribute]
+  --> src\autosub\pipeline\translate\main.py:50:87
+   |
+50 |             raw_text = "".join([part.text for part in event.parts if isinstance(part, pyass.EventText)])
+   |                                                                                       ^^^^^^^^^^^^^^^
+   |
+ERROR Argument `str | None` is not assignable to parameter `project_id` with type `str` in function `autosub.pipeline.translate.api.translate_text` [bad-argument-type]
+  --> src\autosub\pipeline\translate\main.py:62:20
+   |
+62 |         project_id=PROJECT_ID,
+   |                    ^^^^^^^^^^
+   |
+ERROR No attribute `EventText` in module `pyass` [missing-attribute]
+  --> src\autosub\pipeline\translate\main.py:86:28
+   |
+86 |             event.parts = [pyass.EventText(text=new_text_str)]
+   |                            ^^^^^^^^^^^^^^^
+   |
+ERROR No attribute `EventText` in module `pyass` [missing-attribute]
+  --> src\autosub\pipeline\translate\main.py:88:28
+   |
+88 |             event.parts = [pyass.EventText(text=translated_text)]
+   |                            ^^^^^^^^^^^^^^^
+   |
+ INFO 6 errors (5 suppressed)

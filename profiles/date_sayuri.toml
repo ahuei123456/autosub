@@ -1,0 +1,57 @@
+prompt = "prompts/date_sayuri.md"
+vocab = [
+    # --- Program Titles & Identifiers ---
+    "伊達さゆりの 伊達にラジオやってません！！！",
+    "伊達ラジ",
+    "超！A&G＋",
+    "QloveR",
+    "文化放送",
+
+    # --- Greetings & Sign-offs ---
+    "おばんです",
+    "ハッピーです",
+    "伊達にラジオやってません",
+
+    # --- Frequent Topics & Personal Keywords ---
+    "ベチバー", # Vetiver (A recurring topic/buzzword regarding scents/essential oils)
+    "干し芋", # Hoshi-imo (Her favorite snack, frequently discussed)
+    "炊飯器", # Suihanki (Often talks about her struggles/successes with cooking rice)
+    "仙台", # Sendai (Her hometown)
+    "宮城", # Miyagi
+    "牛タン", # Gyutan
+    "伊達っ子", # Datekko (Fan name)
+    "日めくりカレンダー", # Often mentions her "Mainichi Date" calendar
+    "ギター", # Guitar (Related to her role as Kanon)
+
+    # --- Radio Corners ---
+    "伊達にやってません！",
+    "究極の2択",
+    "さゆりのチョイス",
+    "伊達さゆりの できないことなんてない！",
+    "お悩み相談",
+    "ハッピーネーム", # What she calls listeners writing in
+
+    # --- Related Works & People ---
+    "Liella!",
+    "Love Live!",
+    "ラブライブ！スーパースター!!",
+    "澁谷かのん",
+    "岬なこ",
+    "Liyuu",
+    "ペイトン尚未",
+    "青山なぎさ",
+    "鈴原希実",
+    "薮島朱音",
+    "大熊和奏",
+    "絵森彩",
+    "結那",
+    "坂倉花",
+
+    # --- Common Verbal Tics & Speech Patterns ---
+    "〜なわけですよ",
+    "〜というわけで",
+    "あはは", # Her distinct laugh
+    "本当に",
+    "ちょっと待ってください",
+    "えーっと",
+]
