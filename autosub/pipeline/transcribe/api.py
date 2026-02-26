@@ -11,6 +11,7 @@ def transcribe_uri(
     project_id: str,
     language_code: str = "ja-JP",
     vocabulary: list[str] | None = None,
+    num_speakers: int | None = None,
 ) -> speech_v2.BatchRecognizeResponse:
     """
     Sends a long-running batch transcription request to Chirp 3 using a GCS URI.
@@ -20,14 +21,21 @@ def transcribe_uri(
         client_options=ClientOptions(api_endpoint="us-central1-speech.googleapis.com")
     )
 
+    features = speech_v2.RecognitionFeatures(
+        enable_word_time_offsets=True,
+    )
+    if num_speakers and num_speakers > 1:
+        features.enable_speaker_diarization = True
+        features.diarization_config = speech_v2.SpeakerDiarizationConfig(
+            min_speaker_count=num_speakers,
+            max_speaker_count=num_speakers,
+        )
+
     config = speech_v2.RecognitionConfig(
         auto_decoding_config=speech_v2.AutoDetectDecodingConfig(),
         language_codes=[language_code],
         model="chirp_2",  # Google refers to Chirp 3 API as chirp_2 occasionally, double check later
-        features=speech_v2.RecognitionFeatures(
-            enable_word_time_offsets=True,
-            # enable_speaker_diarization=True # TODO: Add for MVP+ multi-speaker support
-        ),
+        features=features,
     )
 
     if vocabulary:
@@ -64,6 +72,7 @@ def transcribe_local_file(
     project_id: str,
     language_code: str = "ja-JP",
     vocabulary: list[str] | None = None,
+    num_speakers: int | None = None,
 ) -> speech_v2.RecognizeResponse:
     """
     Sends a standard synchronous transcription request using local audio bytes.
@@ -73,13 +82,21 @@ def transcribe_local_file(
         client_options=ClientOptions(api_endpoint="us-central1-speech.googleapis.com")
     )
 
+    features = speech_v2.RecognitionFeatures(
+        enable_word_time_offsets=True,
+    )
+    if num_speakers and num_speakers > 1:
+        features.enable_speaker_diarization = True
+        features.diarization_config = speech_v2.SpeakerDiarizationConfig(
+            min_speaker_count=num_speakers,
+            max_speaker_count=num_speakers,
+        )
+
     config = speech_v2.RecognitionConfig(
         auto_decoding_config=speech_v2.AutoDetectDecodingConfig(),
         language_codes=[language_code],
         model="chirp_2",
-        features=speech_v2.RecognitionFeatures(
-            enable_word_time_offsets=True,
-        ),
+        features=features,
     )
 
     if vocabulary:

@@ -14,6 +14,7 @@ def transcribe(
     output_json_path: Path,
     language_code: str = "ja-JP",
     vocabulary: list[str] | None = None,
+    num_speakers: int | None = None,
 ) -> TranscriptionResult:
     """
     End-to-end transcription of a video file:
@@ -47,7 +48,7 @@ def transcribe(
 
             try:
                 response = api.transcribe_uri(
-                    gcs_uri, PROJECT_ID, language_code, vocabulary
+                    gcs_uri, PROJECT_ID, language_code, vocabulary, num_speakers
                 )
                 # Parse Google's Batch response
                 for result in response.results[
@@ -60,6 +61,9 @@ def transcribe(
                                     word=w.word,
                                     start_time=w.start_offset.total_seconds(),  # type: ignore
                                     end_time=w.end_offset.total_seconds(),  # type: ignore
+                                    speaker=w.speaker_label
+                                    if hasattr(w, "speaker_label")
+                                    else None,
                                 )
                             )
             finally:
@@ -72,7 +76,7 @@ def transcribe(
                 audio_content = f.read()
 
             response = api.transcribe_local_file(
-                audio_content, PROJECT_ID, language_code, vocabulary
+                audio_content, PROJECT_ID, language_code, vocabulary, num_speakers
             )
             # Parse Google's standard response
             for result in response.results:
@@ -83,6 +87,9 @@ def transcribe(
                                 word=w.word,
                                 start_time=w.start_offset.total_seconds(),  # type: ignore
                                 end_time=w.end_offset.total_seconds(),  # type: ignore
+                                speaker=w.speaker_label
+                                if hasattr(w, "speaker_label")
+                                else None,
                             )
                         )
 

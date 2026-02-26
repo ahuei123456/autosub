@@ -15,29 +15,32 @@ def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> 
         visited = set()
 
     if profile_name in visited:
-        return {"prompt": [], "vocab": []}
+        return {"prompt": [], "vocab": [], "speakers": None}
     visited.add(profile_name)
 
     profile_path = Path("profiles") / f"{profile_name}.toml"
     if not profile_path.exists():
         logger.warning(f"Profile {profile_name}.toml not found in profiles/ directory.")
-        return {"prompt": [], "vocab": []}
+        return {"prompt": [], "vocab": [], "speakers": None}
 
     try:
         with open(profile_path, "rb") as f:
             data = tomllib.load(f)
     except Exception as e:
         logger.error(f"Failed to parse TOML profile {profile_path}: {e}")
-        return {"prompt": [], "vocab": []}
+        return {"prompt": [], "vocab": [], "speakers": None}
 
     combined_prompt = []
     combined_vocab = []
+    final_speakers = None
 
     # 1. Process base profiles recursively (so base instructions come first)
     for base in data.get("extends", []):
         base_data = load_unified_profile(base, visited)
         combined_prompt.extend(base_data["prompt"])
         combined_vocab.extend(base_data["vocab"])
+        if final_speakers is None and base_data.get("speakers") is not None:
+            final_speakers = base_data["speakers"]
 
     # 2. Append this profile's data
     if "prompt" in data:
@@ -60,4 +63,15 @@ def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> 
         else:
             logger.warning(f"'vocab' in {profile_name} must be a list of strings.")
 
-    return {"prompt": combined_prompt, "vocab": combined_vocab}
+    # Override speakers if explicitly defined in this profile layer
+    if "speakers" in data:
+        if isinstance(data["speakers"], int):
+            final_speakers = data["speakers"]
+        else:
+            logger.warning(f"'speakers' in {profile_name} must be an integer.")
+
+    return {
+        "prompt": combined_prompt,
+        "vocab": combined_vocab,
+        "speakers": final_speakers,
+    }

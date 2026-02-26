@@ -3,9 +3,8 @@
 With the core MVP (Minimum Viable Product) now complete—featuring a fully connected `autosub run` pipeline that handles Transcription, Formatting, and Translation via the composable TOML `--profile` system—the following architectural plans have been mapped out for Phase 2 of the `autosub` toolchain.
 
 ## 1. Multi-Speaker Support & Diarization
-*   **Audio Processing**: Integrate Speaker Diarization (identifying *who* is speaking) into the Transcription module. This may require pre-processing the audio before passing it to Chirp 3, or attempting to leverage Chirp's native diarization features if accuracy improves.
-*   **Profile Expansion**: Expand the TOML profile system to support defining stylistic formatting (colors, fonts, outlines) mapped to specific speakers.
-*   **Dependency Injection**: The Formatting module will need to consume these speaker tags and apply the correct `pyass` styles to the generated events.
+*   **Audio Processing**: Integrate Speaker Diarization (identifying *who* is speaking) into the Transcription module. This includes updating the TOML profile to be able to specify the number of speakers for diarization purposes, which is then passed to Chirp 2 in the transcription stage. This should still be overridable with CLI flags.
+*   **Formatting Integration**: The Formatting module will consume these speaker tags and assign each speaker (as determined by Chirp) a separate style within the generated `.ass` file during the format stage.
 
 ## 2. Advanced Timing Rules
 Currently, subtitle chunking relies purely on semantic pauses and punctuation. Phase 2 aims to introduce professional visual rules:

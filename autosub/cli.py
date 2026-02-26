@@ -48,6 +48,12 @@ def transcribe(
         "--profile",
         help="Profile name to load vocabulary and translation prompt settings.",
     ),
+    speakers: int = typer.Option(
+        None,
+        "--speakers",
+        "-s",
+        help="Number of speakers for diarization (must be > 1 to enable).",
+    ),
 ):
     """
     Extracts audio from a video and transcribes it using Google Cloud Speech-to-Text (Chirp 3).
@@ -55,14 +61,19 @@ def transcribe(
     logger.info(f"Starting transcription pipeline for: {video_path}")
 
     final_vocab = []
+    final_speakers = speakers
     if profile:
         profile_data = load_unified_profile(profile)
         final_vocab.extend(profile_data["vocab"])
+        if not final_speakers and profile_data.get("speakers"):
+            final_speakers = profile_data["speakers"]
     if vocab:
         final_vocab.extend(vocab)
 
     try:
-        result = transcribe_main.transcribe(video_path, output, language, final_vocab)
+        result = transcribe_main.transcribe(
+            video_path, output, language, final_vocab, final_speakers
+        )
         logger.info(f"Success! Saved {len(result.words)} words to {output}")
     except Exception as e:
         logger.error(f"Error during transcription: {e}")
@@ -191,6 +202,12 @@ def run(
     bilingual: bool = typer.Option(
         False, "--bilingual/--replace", help="Include original text on top."
     ),
+    speakers: int = typer.Option(
+        None,
+        "--speakers",
+        "-s",
+        help="Number of speakers for diarization (must be > 1 to enable).",
+    ),
 ):
     """
     Step 4: Runs the full end-to-end autosub pipeline (Transcribe -> Format -> Translate).
@@ -209,10 +226,13 @@ def run(
     # Resolve Profile
     final_vocab = []
     final_prompt_parts = []
+    final_speakers = speakers
     if profile:
         profile_data = load_unified_profile(profile)
         final_vocab.extend(profile_data["vocab"])
         final_prompt_parts.extend(profile_data["prompt"])
+        if not final_speakers and profile_data.get("speakers"):
+            final_speakers = profile_data["speakers"]
     if vocab:
         final_vocab.extend(vocab)
     if prompt:
@@ -223,7 +243,9 @@ def run(
     # Step 1: Transcribe
     try:
         logger.info("[Step 1/3] Transcribing...")
-        transcribe_main.transcribe(video_path, transcript_out, language, final_vocab)
+        transcribe_main.transcribe(
+            video_path, transcript_out, language, final_vocab, final_speakers
+        )
     except Exception as e:
         logger.error(f"Failed during transcription: {e}")
         raise typer.Exit(code=1)
