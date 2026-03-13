@@ -1,5 +1,59 @@
 prompt = "prompts/liella.md"
+speakers = 11
 vocab = [
-    "Liella",
-    "Love Live",
+    # --- Group & Sub-Units ---
+    "Liella!",
+    "CatChu!",
+    "KALEIDOSCORE",
+    "5yncri5e!",
+
+    # --- Cast Members (Seiyuu) ---
+    "伊達さゆり", # Date Sayuri
+    "Liyuu",
+    "岬なこ", # Misaki Nako
+    "ペイトン尚未", # Payton Naomi
+    "青山なぎさ", # Aoyama Nagisa
+    "鈴原希実", # Suzuhara Nozomi
+    "薮島朱音", # Yabushima Akane
+    "大熊和奏", # Ookuma Wakana
+    "絵森彩", # Emori Aya
+    "結那", # Yuina
+    "坂倉花", # Sakakura Sakura
+
+    # --- Characters ---
+    "澁谷かのん",
+    "唐可可",
+    "嵐千砂都",
+    "平安名すみれ",
+    "葉月恋",
+    "桜小路きな子",
+    "米女メイ",
+    "若菜四季",
+    "鬼塚夏美",
+    "ウィーン・マルガレーテ",
+    "鬼塚冬毬",
+
+    # --- Program & Current Tour (2026) ---
+    "リエラジ", # Liella! Radio
+    "生配信", # Livestream
+    "チュトリエラ", # TUTOLiella!! (Current variety show)
+    "Fly! MUSIC WORLD", # 7th Live Title
+    "結ヶ丘女子高等学校", # Yuigaoka Girls' High School
+
+    # --- Catchphrases & Verbal Tics ---
+    "ギャラクシー", # Galaxy (Sumire)
+    "〜っす", # -ssu (Kinako's verbal tic)
+    "オニナッツ", # Oninatsu (Natsumi's nickname/catchphrase)
+    "マニー", # Money (Natsumi)
+    "ワンダフォー", # Wonderful (Wien's pronunciation)
+    "おいっす", # Oissu (Common greeting)
+    "ういっす", # Uissu
+
+    # --- General Livestream Terms ---
+    "スクスタ", # SIFAS (General franchise term)
+    "ラブライブ！スーパースター!!",
+    "ハッシュタグ",
+    "メール",
+    "お便り",
+    "告知", # Announcement
 ]

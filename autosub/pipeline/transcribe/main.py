@@ -50,6 +50,10 @@ def transcribe(
                 response = api.transcribe_uri(
                     gcs_uri, PROJECT_ID, language_code, vocabulary, num_speakers
                 )
+
+                with open("response_batch.json", "w", encoding="utf-8") as f:
+                    f.write(str(response.results[gcs_uri]))
+
                 # Parse Google's Batch response
                 for result in response.results[
                     gcs_uri

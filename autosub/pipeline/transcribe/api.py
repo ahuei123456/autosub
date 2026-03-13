@@ -18,23 +18,20 @@ def transcribe_uri(
     Required for audio files longer than 1 minute.
     """
     client = speech_v2.SpeechClient(
-        client_options=ClientOptions(api_endpoint="us-central1-speech.googleapis.com")
+        client_options=ClientOptions(api_endpoint="us-speech.googleapis.com")
     )
 
-    features = speech_v2.RecognitionFeatures(
-        enable_word_time_offsets=True,
-    )
+    features = speech_v2.RecognitionFeatures()
     if num_speakers and num_speakers > 1:
-        features.enable_speaker_diarization = True
         features.diarization_config = speech_v2.SpeakerDiarizationConfig(
-            min_speaker_count=num_speakers,
+            min_speaker_count=1,
             max_speaker_count=num_speakers,
         )
 
     config = speech_v2.RecognitionConfig(
         auto_decoding_config=speech_v2.AutoDetectDecodingConfig(),
         language_codes=[language_code],
-        model="chirp_2",  # Google refers to Chirp 3 API as chirp_2 occasionally, double check later
+        model="chirp_3",  # Google refers to Chirp 3 API as chirp_2 occasionally, double check later
         features=features,
     )
 
@@ -50,7 +47,7 @@ def transcribe_uri(
         )
 
     request = speech_v2.BatchRecognizeRequest(
-        recognizer=f"projects/{project_id}/locations/us-central1/recognizers/_",
+        recognizer=f"projects/{project_id}/locations/us/recognizers/_",
         config=config,
         files=[speech_v2.BatchRecognizeFileMetadata(uri=gcs_uri)],
         recognition_output_config=speech_v2.RecognitionOutputConfig(

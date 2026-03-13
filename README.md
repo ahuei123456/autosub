@@ -13,8 +13,8 @@ Automatic video subbing and translation toolchain powered by AI.
 The initial version of `autosub` focuses on generating accurate, timed, and translated subtitles for specific speaking-focused videos.
 
 The MVP workflow consists of the following steps:
-1. **Speech-to-Text Transcription**: Utilize the Google Chirp 3 API to transcribe video audio.
-2. **Subtitle Formatting (.ass)**: Bundle the transcribed text and speaker information into a `.ass` (Advanced SubStation Alpha) file, accurately timed to individual lines and sentences.
+1. **Speech-to-Text Transcription**: Utilize the Google Chirp 3 API to transcribe video audio, with full support for multi-speaker diarization.
+2. **Subtitle Formatting (.ass)**: Bundle the transcribed text and speaker information into a `.ass` (Advanced SubStation Alpha) file. Timings are smartly chunked to handle overlapping speech independently per speaker, generating dynamic styles for visually distinct subtitles.
 3. **Translation**: Translate each individual line using the Google Cloud Translation API, augmented with an LLM for context-aware and natural phrasing.
 
 ```mermaid
@@ -29,7 +29,6 @@ graph TD
 
 Following the MVP, the toolchain will be expanded with advanced capabilities:
 
-- **Multi-Speaker Support**: Handle complex audio environments, such as livestreams or group concert footage, with accurate speaker diarization and identification.
 - **Advanced Timing Rules**: Shift and adjust `.ass` line timings to adhere to professional subtitling best practices:
   - Limit text lines on screen to a maximum of 2.
   - Ensure there are no awkward gaps between consecutive lines.
@@ -88,6 +87,9 @@ vocab = [
     "Date Sayuri",
     "Sayurin"
 ]
+
+# Provide number of speakers to enable multi-speaker automatic styling
+speakers = 2
 ```
 
 By passing `--profile date_sayuri`, the pipeline will automatically apply these settings to both the transcription and translation stages.
@@ -101,9 +103,9 @@ You can also run each step of the pipeline manually. All commands accept the `--
 **Step 1: Transcribe Audio**
 Extracts the audio, processes it via Google Cloud Chirp 3, and saves a timestamped `.json` transcript.
 ```bash
-uv run autosub transcribe video.mp4 --out transcript.json --profile date_sayuri
+uv run autosub transcribe video.mp4 --out transcript.json --profile date_sayuri --speakers 2
 ```
-*(You can also pass individual vocabulary hints via `-v "Word"`).*
+*(You can also pass individual vocabulary hints via `-v "Word"` and set the speaker count via `--speakers 2` to enable diarization).*
 
 **Step 2: Subtitle Formatting (.ass)**
 Converts the JSON transcript into a timed `.ass` subtitle file using semantic chunking rules (breaking at punctuation and pauses).
