@@ -62,3 +62,43 @@ def test_profile_speaker_parsing(tmp_path):
         assert data["vocab"] == ["test"]
     finally:
         autosub.core.profile.Path = original_path
+
+
+def test_profile_prompt_inheritance(tmp_path):
+    profile_dir = tmp_path / "profiles"
+    prompt_dir = tmp_path / "prompts"
+    profile_dir.mkdir()
+    prompt_dir.mkdir()
+
+    (prompt_dir / "base.md").write_text("base guidance", encoding="utf-8")
+    (prompt_dir / "child.md").write_text("child guidance", encoding="utf-8")
+
+    (profile_dir / "base.toml").write_text(
+        'prompt = "prompts/base.md"\n', encoding="utf-8"
+    )
+    (profile_dir / "child.toml").write_text(
+        'extends = ["base"]\nprompt = "prompts/child.md"\n',
+        encoding="utf-8",
+    )
+
+    import autosub.core.profile
+
+    original_path = autosub.core.profile.Path
+
+    class MockPath(autosub.core.profile.Path):
+        def __new__(cls, *args, **kwargs):
+            if args and args[0] == "profiles":
+                return profile_dir
+            if args and args[0] == "prompts/base.md":
+                return prompt_dir / "base.md"
+            if args and args[0] == "prompts/child.md":
+                return prompt_dir / "child.md"
+            return super().__new__(cls, *args, **kwargs)
+
+    autosub.core.profile.Path = MockPath
+
+    try:
+        data = load_unified_profile("child")
+        assert data["prompt"] == ["base guidance", "child guidance"]
+    finally:
+        autosub.core.profile.Path = original_path

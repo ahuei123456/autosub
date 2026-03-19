@@ -1,33 +1,49 @@
+extends = ["solo_seiyuu_radio"]
+
 prompt = "prompts/date_sayuri.md"
 vocab = [
     # --- Program Titles & Identifiers ---
     "伊達さゆりの 伊達にラジオやってません！！！",
-    "伊達ラジ",
+    "伊達ラジ", # Dateraji (Abbreviation of the show)
     "超！A&G＋",
     "QloveR",
     "文化放送",
 
     # --- Greetings & Sign-offs ---
-    "おばんです",
+    "おばんです", # Obandesu (Good evening in Sendai dialect)
     "ハッピーです",
     "伊達にラジオやってません",
 
     # --- Frequent Topics & Personal Keywords ---
     "ベチバー", # Vetiver (A recurring topic/buzzword regarding scents/essential oils)
     "干し芋", # Hoshi-imo (Her favorite snack, frequently discussed)
+    "おせんべい", # Osenbei / Rice crackers (Another snack she loves and talks about growing up with)
     "炊飯器", # Suihanki (Often talks about her struggles/successes with cooking rice)
     "仙台", # Sendai (Her hometown)
     "宮城", # Miyagi
-    "牛タン", # Gyutan
+    "牛タン", # Gyutan / Beef tongue (Her favorite food from her hometown)
     "伊達っ子", # Datekko (Fan name)
     "日めくりカレンダー", # Often mentions her "Mainichi Date" calendar
-    "ギター", # Guitar (Related to her role as Kanon)
+    "ゲラ", # Gera (Refers to her tendency to burst into loud, uncontrollable laughter)
+
+    # --- Fandoms & Hobbies ---
+    "私立恵比寿中学", # Shiritsu Ebisu Chugaku / EbiChu (An idol group she is a massive fan of and often attends concerts for)
+    "エビ中", # EbiChu (Abbreviation for the above)
+    "よさこい", # Yosakoi (Traditional dance she did in her youth and lists as a special skill)
+    "カメラ", # Camera (She enjoys photography)
+    "ギター", # Guitar (Related to her role as Kanon, but she practices it actively)
+    "歌うこと", # Singing (Often talks about singing in her closet or bathtub)
+    "しずくちゃん", # Shizuku-chan (A childhood anime she was obsessed with)
+    "みるみるちゃん", # Mirumiru-chan (Her favorite character from Shizuku-chan)
 
     # --- Radio Corners ---
     "伊達にやってません！",
     "究極の2択",
     "さゆりのチョイス",
     "伊達さゆりの できないことなんてない！",
+    "伊達師範のポジティブ道場！", # Date Shihan's Positive Dojo (She turns listeners' unhappy stories into positive ones)
+    "今夜のこ・ん・だ・て！", # Tonight's Menu (Play on "Kondate" and her name "Date")
+    "5教科相談室", # 5 Subjects Consultation Room
     "お悩み相談",
     "ハッピーネーム", # What she calls listeners writing in
 
@@ -55,7 +71,7 @@ vocab = [
     # --- Common Verbal Tics & Speech Patterns ---
     "〜なわけですよ",
     "〜というわけで",
-    "あはは", # Her distinct laugh
+    "あはは", # Her distinct, very loud laugh
     "本当に",
     "ちょっと待ってください",
     "えーっと",

@@ -1,0 +1,70 @@
+extends = ["solo_seiyuu_radio"]
+
+prompt = "prompts/suzuhara_nozomi.md"
+vocab = [
+    # --- Program Titles & Identifiers ---
+    "鈴原希実の明日はなんしちょっと？",
+    "のんしちょっと",
+    "ラジオどっとあい 鈴原希実の週末なんしちょっと？", # Previous show title
+    "超！A&G＋",
+    "QloveR",
+    "文化放送",
+
+    # --- Greetings & Sign-offs ---
+    "明日はなんしちょっと？",
+    "なんしちょっと？",
+
+    # --- Frequent Topics & Personal Keywords ---
+    "宮崎", # Miyazaki (Her hometown)
+    "宮崎弁", # Miyazaki dialect
+    "パン", # Bread (She loves bread and used to work at a bakery)
+    "漫画", # Manga
+    "アニメ", # Anime
+    "VTuber", # VTuber (She frequently talks about watching VTuber streams)
+    "お姉ちゃん", # Her older sister (Frequently mentions her in anecdotes)
+    "中二病", # Chuunibyou (Often jokes about her past chuunibyou phases)
+
+    # --- Fandoms & Hobbies ---
+    "にじさんじ", # Nijisanji (VTuber agency she frequently watches)
+    "アンジュ・カトリーナ", # Ange Katrina (Nijisanji VTuber she is a massive fan of)
+    "壱百満天原サロメ", # Hyakumantenbara Salome (Another Nijisanji VTuber she loves)
+    "これ描いて死ね", # Kore Kaite Shine (A manga she highly recommended on her show)
+    "漫画", # Manga (She owns thousands of volumes on Kindle)
+    "パン屋巡り", # Bakery hopping (One of her main hobbies)
+    "カードゲーム", # Card games
+    "お絵描き", # Drawing (She loves drawing girls and spends hours doing it)
+    "イラスト", # Illustration
+
+    # --- Radio Corners ---
+    "白黒のんちゃん相談センター", # Black & White Non-chan Consultation Center (Answers as White/Black Non-chan)
+    "100回クイズ", # 100th Episode Quiz
+    "ご褒美セリフ", # Reward Line / Reward Dialogue
+    "のんちゃんの趣味語り", # Non-chan's Hobby Talk
+    "のんのんネーム", # What she calls listeners writing in
+
+    # --- Related Works & People ---
+    "鈴原希実",
+    "のんちゃん",
+    "すずはら",
+    "Liella!",
+    "Love Live!",
+    "ラブライブ！スーパースター!!",
+    "桜小路きな子",
+    "伊達さゆり",
+    "Liyuu",
+    "岬なこ",
+    "ペイトン尚未",
+    "青山なぎさ",
+    "薮島朱音",
+    "大熊和奏",
+    "絵森彩",
+    "結那",
+    "坂倉花",
+
+    # --- Common Verbal Tics & Speech Patterns ---
+    "〜やけん", # Miyazaki dialect she sometimes uses
+    "〜しちょっと？", # Dialect for "What are you doing?"
+    "フフッ", # Her softer, more reserved laugh (compared to Date's loud laugh)
+    "本当に",
+    "なんか",
+]

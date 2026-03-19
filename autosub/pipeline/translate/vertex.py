@@ -34,16 +34,24 @@ class VertexTranslator(BaseTranslator):
 
         # Build dynamic prompt
         prompt = (
-            f"You are a professional subtitle translator. "
-            f"Translate the following JSON array of subtitle lines from {self.source_lang} to {self.target_lang}.\n"
-            f"IMPORTANT RULES:\n"
-            f"1. Maintain the exact same number of items and return a JSON array with 'id' and 'translated' fields.\n"
-            f"2. The input lines are sequential parts of continuous speech.\n"
-            f"3. Do not translate each line in strict isolation. Understand the complete thought across consecutive lines.\n"
-            f"4. Because speakers naturally pause mid-sentence, a single sentence may be split across multiple lines. Translate the complete thought naturally, and distribute the English sentence across the corresponding lines so the grammar flows perfectly from one line to the next.\n"
+            f"You are a professional subtitle translator and localizer.\n"
+            f"Task: Translate the following JSON array of subtitle lines from {self.source_lang} to {self.target_lang}.\n\n"
+            f"Output requirements:\n"
+            f"1. Return valid JSON only.\n"
+            f"2. Return the exact same number of items as the input.\n"
+            f"3. Each item must contain exactly two fields: 'id' and 'translated'.\n"
+            f"4. Preserve item order and keep each translation matched to its original id.\n\n"
+            f"Translation requirements:\n"
+            f"1. The input lines are sequential pieces of continuous spoken dialogue.\n"
+            f"2. Do not translate each line in isolation. Understand the thought across neighboring lines before deciding wording.\n"
+            f"3. If one sentence is split across multiple subtitle lines, translate the full thought naturally and distribute the English across those lines so the flow still reads naturally line by line.\n"
+            f"4. Prioritize natural subtitle English over literal wording, but do not invent information.\n"
+            f"5. Keep the tone, emotional intent, and speaker persona intact.\n"
+            f"6. Keep translations concise enough to work as readable subtitles.\n"
+            f"7. If a line contains a catchphrase, segment title, fandom reference, or recurring term, translate it consistently with the provided context.\n"
         )
         if self.system_prompt:
-            prompt += f"System Instructions: {self.system_prompt}\n"
+            prompt += f"\nSpeaker and style context:\n{self.system_prompt.strip()}\n"
 
         prompt += f"\nInput JSON:\n{payload_str}"
 

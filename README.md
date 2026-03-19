@@ -4,23 +4,23 @@ Automatic video subbing and translation toolchain powered by AI.
 
 ## Overview
 
-`autosub` is a comprehensive toolchain designed to automatically generate high-quality subtitles and translations for videos. It leverages state-of-the-art AI models to transcribe speech, format timings, and translate content.
+`autosub` is a CLI toolchain for generating high-quality Japanese subtitles and translations for speech-focused videos. It transcribes speech, formats readable `.ass` subtitles, and translates them with Google-backed models.
 
 ## Product Roadmap
 
 ### Minimum Viable Product (MVP)
 
-The initial version of `autosub` focuses on generating accurate, timed, and translated subtitles for specific speaking-focused videos.
+The current version of `autosub` focuses on accurate, timed, and translated subtitles for single-speaker Japanese speech.
 
 The MVP workflow consists of the following steps:
-1. **Speech-to-Text Transcription**: Utilize the Google Chirp 3 API to transcribe video audio, with full support for multi-speaker diarization.
-2. **Subtitle Formatting (.ass)**: Bundle the transcribed text and speaker information into a `.ass` (Advanced SubStation Alpha) file. Timings are smartly chunked to handle overlapping speech independently per speaker, generating dynamic styles for visually distinct subtitles.
+1. **Speech-to-Text Transcription**: Utilize Google Speech-to-Text to transcribe single-speaker Japanese video or audio.
+2. **Subtitle Formatting (.ass)**: Convert the transcript into a readable `.ass` (Advanced SubStation Alpha) file with semantic chunking, minimum-duration timing rules, optional scene-aware snapping, and automatic wrapping to keep subtitles within two visible lines.
 3. **Translation**: Translate each individual line using the Google Cloud Translation API, augmented with an LLM for context-aware and natural phrasing.
 
 ```mermaid
 graph TD
     A[Video/Audio Input] -->|Audio| B(Speech-to-Text Transcription<br>Google Chirp 3 API)
-    B -->|Transcribed Text & Timings| C(Subtitle Formatting<br>Generate .ass file)
+    B -->|Transcribed Text & Timings| C(Subtitle Formatting<br>Generate 2-line .ass file)
     C -->|Timed Original Subtitles| D(Translation<br>Google Cloud Translation API + LLM)
     D -->|Translated Subtitles| E[Final Translated .ass File]
 ```
@@ -29,10 +29,7 @@ graph TD
 
 Following the MVP, the toolchain will be expanded with advanced capabilities:
 
-- **Advanced Timing Rules**: Shift and adjust `.ass` line timings to adhere to professional subtitling best practices:
-  - Limit text lines on screen to a maximum of 2.
-  - Ensure there are no awkward gaps between consecutive lines.
-  - Snap subtitle lines to video keyframes for smoother transitions.
+- **Advanced Timing Rules**: Continue refining professional subtitling rules around line length, scene-aware timing, and gap handling for single-speaker dialogue.
 - **On-Screen Text OCR**: Implement optical character recognition (OCR) on the video footage to generate subtitle lines for signs, lower thirds, and other important on-screen text.
 - **Audio Segmentation (Speech vs. Singing)**: Intelligently ignore singing sections (to be handled by separate specialized modules) and exclusively generate audio/subtitle lines for spoken sections.
 
@@ -41,7 +38,8 @@ Following the MVP, the toolchain will be expanded with advanced capabilities:
 ### Prerequisites
 1. **Python 3.12+** and `uv` installed.
 2. **FFmpeg**: Must be available on your system path (e.g., `winget install ffmpeg`).
-3. **Google Cloud Account**:
+3. **Optional Keyframe Tooling**: Install `SCXvid` if you want automatic keyframe extraction for scene-aware subtitle snapping. Without it, the pipeline still runs and simply skips keyframe extraction.
+4. **Google Cloud Account**:
    - A Service Account JSON key with `Cloud Speech Administrator` and `Storage Object Admin`.
    - A Google Cloud Storage Bucket (required for videos >1 minute).
 
@@ -72,7 +70,7 @@ uv run autosub run path/to/video.mp4 --profile date_sayuri
 This will automatically generate three files in the video's directory: `transcript.json`, `original.ass`, and `translated.ass`.
 
 #### Unified Profiles (TOML)
-`autosub` uses a powerful, composable profile system powered by TOML. You can configure custom vocabulary (to help Chirp 3 recognize domain-specific names) and LLM translation instructions (to guide Gemini's tone) in a single file located in the `profiles/` directory!
+`autosub` uses composable TOML profiles. You can configure custom vocabulary, translation instructions, and subtitle timing/layout rules in a single file located in the `profiles/` directory.
 
 Example `profiles/date_sayuri.toml`:
 ```toml
@@ -88,30 +86,41 @@ vocab = [
     "Sayurin"
 ]
 
-# Provide number of speakers to enable multi-speaker automatic styling
-speakers = 2
+[timing]
+min_duration_ms = 500
+snap_threshold_ms = 250
+conditional_snap_threshold_ms = 500
+max_line_width = 22
+max_lines_per_subtitle = 2
 ```
 
-By passing `--profile date_sayuri`, the pipeline will automatically apply these settings to both the transcription and translation stages.
+By passing `--profile date_sayuri`, the pipeline will automatically apply these settings to transcription, formatting, and translation.
 
 ---
 
 ### Individual Step Execution
 
-You can also run each step of the pipeline manually. All commands accept the `--profile` argument.
+You can also run each step of the pipeline manually. All commands accept `--profile`.
 
 **Step 1: Transcribe Audio**
-Extracts the audio, processes it via Google Cloud Chirp 3, and saves a timestamped `.json` transcript.
+Extracts the audio, processes it via Google Speech-to-Text, and saves a timestamped `.json` transcript.
 ```bash
-uv run autosub transcribe video.mp4 --out transcript.json --profile date_sayuri --speakers 2
+uv run autosub transcribe video.mp4 --out transcript.json --profile date_sayuri
 ```
-*(You can also pass individual vocabulary hints via `-v "Word"` and set the speaker count via `--speakers 2` to enable diarization).*
+`--speakers` remains reserved for future diarization work and is ignored by the current single-speaker pipeline.
 
 **Step 2: Subtitle Formatting (.ass)**
-Converts the JSON transcript into a timed `.ass` subtitle file using semantic chunking rules (breaking at punctuation and pauses).
+Converts the JSON transcript into a timed `.ass` subtitle file using semantic chunking, scene-aware timing rules, and Japanese-first two-line wrapping.
 ```bash
 uv run autosub format transcript.json --out original.ass
 ```
+
+To enable scene-aware snapping from an existing Aegisub keyframe log, provide both the keyframe file and the source FPS:
+```bash
+uv run autosub format transcript.json --out original.ass --keyframes video_keyframes.log --fps 23.976
+```
+
+The end-to-end `run` command can also extract keyframes automatically when `SCXvid` is installed. If it is not installed, the pipeline logs a warning and continues without keyframe snapping.
 
 **Step 3: Translation**
 Translates the `.ass` file using a pluggable translation engine. By default, it uses high-quality context-aware translation via **Gemini 2.5 Flash on Vertex AI**.

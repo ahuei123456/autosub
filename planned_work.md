@@ -4,10 +4,12 @@ With the core MVP (Minimum Viable Product) now complete—featuring a fully conn
 
 
 ## 2. Advanced Timing Rules
-Currently, subtitle chunking relies purely on semantic pauses and punctuation. Phase 2 aims to introduce professional visual rules:
-*   Limit text lines on screen to a maximum of 2.
-*   Ensure there are no awkward invisible gaps between consecutive lines (snapping to nearest neighbor if under a threshold).
-*   Implement visual keyframe snapping to ensure subtitles don't pop up during scene transitions.
+The single-speaker timing pipeline now supports minimum duration padding, gap snapping, optional keyframe-aware scene snapping, and automatic wrapping to keep subtitles within two visible lines.
+
+Remaining work in this area:
+*   Improve line breaking so semantic chunking and visual wrapping cooperate better on very dense speech.
+*   Tune scene-aware snapping heuristics against real subtitle editing workflows in Aegisub.
+*   Add profile presets for different content densities instead of relying on one global timing profile.
 
 ## 3. Audio Extraction & Segmentation Pipeline
 *   **Singing Filtering**: Intelligently detect and ignore singing sections in concert videos (e.g. leveraging `spleeter` or similar vocal detection tech), so the primary transcription module exclusively subtitiles the MC / spoken sections.
@@ -16,5 +18,5 @@ Currently, subtitle chunking relies purely on semantic pauses and punctuation. P
 *   **Visual Pipeline**: Implement optical character recognition (OCR) on the raw video footage.
 *   **Integration**: Seamlessly interleave OCR-generated `.ass` lines (e.g., lower thirds, on-screen signs) with the speech-generated `.ass` lines, ensuring visual styles do not clash and timestamps overlap cleanly.
 
-## 5. Web UI or Desktop GUI
-*   Wrap the Typer CLI in a clean interface (e.g. a local React/Next.js dashboard) where users can easily drop videos, select profiles from a visual list, edit TOML/Markdown files directly in a rich text editor, and browse the staging bucket without using the terminal.
+## 5. Review UX
+*   Add a lightweight review flow around `original.ass` so users can edit timings and line breaks in Aegisub before running translation.

@@ -12,7 +12,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(help="AutoSub AI Toolchain CLI")
+app = typer.Typer(help="AutoSub CLI for single-speaker Japanese subtitle generation")
 
 
 @app.callback()
@@ -52,28 +52,28 @@ def transcribe(
         None,
         "--speakers",
         "-s",
-        help="Number of speakers for diarization (must be > 1 to enable).",
+        help="Reserved for future diarization work. Ignored by the current single-speaker pipeline.",
     ),
 ):
     """
-    Extracts audio from a video and transcribes it using Google Cloud Speech-to-Text (Chirp 3).
+    Extracts audio and transcribes single-speaker Japanese speech with Google Cloud Speech-to-Text.
     """
     logger.info(f"Starting transcription pipeline for: {video_path}")
 
     final_vocab = []
-    final_speakers = speakers
     if profile:
         profile_data = load_unified_profile(profile)
         final_vocab.extend(profile_data["vocab"])
-        if not final_speakers and profile_data.get("speakers"):
-            final_speakers = profile_data["speakers"]
     if vocab:
         final_vocab.extend(vocab)
 
-    try:
-        result = transcribe_main.transcribe(
-            video_path, output, language, final_vocab, final_speakers
+    if speakers:
+        logger.warning(
+            "--speakers is currently ignored. The active pipeline is single-speaker only."
         )
+
+    try:
+        result = transcribe_main.transcribe(video_path, output, language, final_vocab)
         logger.info(f"Success! Saved {len(result.words)} words to {output}")
     except Exception as e:
         logger.error(f"Error during transcription: {e}")
@@ -93,15 +93,41 @@ def format(
         "--out",
         help="Path to save the generated output .ass file (defaults to original.ass in the same directory).",
     ),
+    keyframes: Path = typer.Option(
+        None, "--keyframes", help="Path to Aegisub keyframes log for snapping."
+    ),
+    fps: float = typer.Option(
+        0.0, "--fps", help="Video FPS, required if --keyframes is used."
+    ),
+    profile: str = typer.Option(
+        None, "--profile", help="Profile name to load timing configuration."
+    ),
 ):
     """
-    Step 2: Merges an audio transcript JSON into properly timed subtitle lines and generates a .ass file.
+    Step 2: Converts a transcript JSON into timed, wrapped single-lane .ass subtitles.
     """
     if not out:
         out = input_transcript.with_name("original.ass")
 
+    if keyframes and fps <= 0:
+        logger.error("--fps is required when --keyframes is provided.")
+        raise typer.Exit(code=1)
+
+    timing_config = {}
+    if profile:
+        profile_data = load_unified_profile(profile)
+        timing_config = profile_data.get("timing", {})
+
+    kf_ms = None
+    if keyframes and fps > 0:
+        from autosub.pipeline.video.keyframes import parse_aegisub_keyframes
+
+        kf_ms = parse_aegisub_keyframes(keyframes, fps)
+
     try:
-        format_module.format_subtitles(input_transcript, out)
+        format_module.format_subtitles(
+            input_transcript, out, keyframes=kf_ms, timing_config=timing_config
+        )
     except Exception as e:
         logger.error(f"Error during formatting: {e}")
         raise typer.Exit(code=1)
@@ -206,11 +232,21 @@ def run(
         None,
         "--speakers",
         "-s",
-        help="Number of speakers for diarization (must be > 1 to enable).",
+        help="Reserved for future diarization work. Ignored by the current single-speaker pipeline.",
+    ),
+    keyframes: Path = typer.Option(
+        None,
+        "--keyframes",
+        help="Path to existing keyframes log (overrides extraction).",
+    ),
+    extract_keyframes: bool = typer.Option(
+        True,
+        "--extract-keyframes/--no-extract-keyframes",
+        help="Automatically extract keyframes when optional external tooling is installed.",
     ),
 ):
     """
-    Step 4: Runs the full end-to-end autosub pipeline (Transcribe -> Format -> Translate).
+    Runs the end-to-end single-speaker Japanese pipeline (Transcribe -> Format -> Translate).
     """
     logger.info(f"Starting full autosub pipeline for: {video_path}")
 
@@ -226,34 +262,82 @@ def run(
     # Resolve Profile
     final_vocab = []
     final_prompt_parts = []
-    final_speakers = speakers
+    final_timing = {}
+    profile_speakers_requested = False
     if profile:
         profile_data = load_unified_profile(profile)
         final_vocab.extend(profile_data["vocab"])
         final_prompt_parts.extend(profile_data["prompt"])
-        if not final_speakers and profile_data.get("speakers"):
-            final_speakers = profile_data["speakers"]
+        final_timing = profile_data.get("timing", {})
+        profile_speakers_requested = bool(profile_data.get("speakers"))
     if vocab:
         final_vocab.extend(vocab)
     if prompt:
         final_prompt_parts.append(prompt)
+
+    if speakers:
+        logger.warning(
+            "--speakers is currently ignored. The active pipeline is single-speaker only."
+        )
+    elif profile_speakers_requested:
+        logger.warning(
+            "Profile speaker settings are currently ignored. The active pipeline is single-speaker only."
+        )
 
     final_prompt = "\n\n".join(final_prompt_parts) if final_prompt_parts else None
 
     # Step 1: Transcribe
     try:
         logger.info("[Step 1/3] Transcribing...")
-        transcribe_main.transcribe(
-            video_path, transcript_out, language, final_vocab, final_speakers
-        )
+        transcribe_main.transcribe(video_path, transcript_out, language, final_vocab)
     except Exception as e:
         logger.error(f"Failed during transcription: {e}")
         raise typer.Exit(code=1)
 
+    # Step 1.5: Keyframes
+    kf_ms = None
+    vid_duration_ms = None
+    try:
+        logger.info("[Step 1.5/3] Processing Video Keyframes & Metadata...")
+        from autosub.pipeline.video.keyframes import (
+            get_fps,
+            extract_keyframes as extract_keyframes_func,
+            parse_aegisub_keyframes,
+        )
+
+        fps = get_fps(video_path)
+        if fps > 0:
+            import ffmpeg
+
+            probe = ffmpeg.probe(str(video_path))
+            try:
+                vid_duration_ms = int(float(probe["format"]["duration"]) * 1000)
+            except Exception:
+                pass
+
+            if keyframes and keyframes.exists():
+                logger.info(f"Using provided keyframes: {keyframes}")
+                kf_ms = parse_aegisub_keyframes(keyframes, fps)
+            elif extract_keyframes:
+                kf_out = out_dir / f"{video_path.stem}_keyframes.log"
+                logger.info(f"Extracting keyframes to {kf_out}...")
+                extract_keyframes_func(video_path, kf_out)
+                kf_ms = parse_aegisub_keyframes(kf_out, fps)
+        else:
+            logger.warning("No video stream found. Keyframe extraction disabled.")
+    except Exception as e:
+        logger.warning(f"Failed to process keyframes: {e}")
+
     # Step 2: Format
     try:
         logger.info("[Step 2/3] Formatting...")
-        format_module.format_subtitles(transcript_out, original_ass_out)
+        format_module.format_subtitles(
+            transcript_out,
+            original_ass_out,
+            keyframes=kf_ms,
+            video_duration_ms=vid_duration_ms,
+            timing_config=final_timing,
+        )
     except Exception as e:
         logger.error(f"Failed during formatting: {e}")
         raise typer.Exit(code=1)
