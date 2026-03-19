@@ -1,137 +1,282 @@
 # autosub
 
-Automatic video subbing and translation toolchain powered by AI.
+Automatic Japanese subtitle generation and translation pipeline for speech-heavy video and audio.
 
-## Overview
+## Current Pipeline
 
-`autosub` is a CLI toolchain for generating high-quality Japanese subtitles and translations for speech-focused videos. It transcribes speech, formats readable `.ass` subtitles, and translates them with Google-backed models.
+`autosub` currently runs a four-stage CLI pipeline:
 
-## Product Roadmap
-
-### Minimum Viable Product (MVP)
-
-The current version of `autosub` focuses on accurate, timed, and translated subtitles for single-speaker Japanese speech.
-
-The MVP workflow consists of the following steps:
-1. **Speech-to-Text Transcription**: Utilize Google Speech-to-Text to transcribe single-speaker Japanese video or audio.
-2. **Subtitle Formatting (.ass)**: Convert the transcript into a readable `.ass` (Advanced SubStation Alpha) file with semantic chunking, minimum-duration timing rules, optional scene-aware snapping, and automatic wrapping to keep subtitles within two visible lines.
-3. **Translation**: Translate each individual line using the Google Cloud Translation API, augmented with an LLM for context-aware and natural phrasing.
+1. **Transcribe**: Extract audio, send it to Google Cloud Speech-to-Text (`chirp_2`), and write a word-timed `transcript.json`.
+2. **Format**: Chunk words into subtitle lines, optionally apply discourse-aware radio segmentation, apply timing and optional keyframe snapping, and write `original.ass`.
+3. **Translate**: Translate subtitle events with either Vertex AI (`gemini-2.5-flash`) or Cloud Translation v3, then write `translated.ass`.
+4. **Postprocess**: Apply profile-driven editorial cleanup to the translated `.ass` file. The built-in `run` command includes this step automatically.
 
 ```mermaid
 graph TD
-    A[Video/Audio Input] -->|Audio| B(Speech-to-Text Transcription<br>Google Chirp 3 API)
-    B -->|Transcribed Text & Timings| C(Subtitle Formatting<br>Generate 2-line .ass file)
-    C -->|Timed Original Subtitles| D(Translation<br>Google Cloud Translation API + LLM)
-    D -->|Translated Subtitles| E[Final Translated .ass File]
+    A[Video or Audio Input] --> B[Transcribe<br/>Google Speech-to-Text chirp_2]
+    B --> C[Format<br/>Chunking + Timing + Optional Keyframe Snapping]
+    C --> D[Translate<br/>Vertex Gemini 2.5 Flash or Cloud Translation v3]
+    D --> E[Postprocess<br/>Profile Extensions]
+    E --> F[Final translated.ass]
 ```
 
-### Future Features & Enhancements
+## Current Capabilities
 
-Following the MVP, the toolchain will be expanded with advanced capabilities:
+- Word-level transcript timing from Google Speech-to-Text.
+- Automatic short-audio local transcription and long-audio GCS batch transcription.
+- Subtitle timing cleanup with minimum-duration padding, gap snapping, and optional keyframe alignment.
+- Radio-show discourse extensions that can split listener mail framing and label subtitle roles.
+- Optional bilingual output with original Japanese stacked above the translation.
+- Profile inheritance for prompts, vocabulary, timing, and extensions.
 
-- **Advanced Timing Rules**: Continue refining professional subtitling rules around line length, scene-aware timing, and gap handling for single-speaker dialogue.
-- **On-Screen Text OCR**: Implement optical character recognition (OCR) on the video footage to generate subtitle lines for signs, lower thirds, and other important on-screen text.
-- **Audio Segmentation (Speech vs. Singing)**: Intelligently ignore singing sections (to be handled by separate specialized modules) and exclusively generate audio/subtitle lines for spoken sections.
+## Current Limits
 
-## Getting Started
+- The CLI is still documented and exposed as a **single-speaker** pipeline.
+- `--speakers` and profile `speakers` values are parsed but currently ignored by the active CLI flow.
+- The transcript and formatter can preserve `speaker` labels if they are already present in `transcript.json`, and `.ass` generation will create per-speaker styles, but diarization is not wired through the transcription commands yet.
+- The formatter does **not** currently insert ASS line breaks (`\N`). Layout helpers exist in the codebase, but profile options such as `max_line_width` and `max_lines_per_subtitle` are not currently consumed by the CLI pipeline.
 
-### Prerequisites
-1. **Python 3.12+** and `uv` installed.
-2. **FFmpeg**: Must be available on your system path (e.g., `winget install ffmpeg`).
-3. **Optional Keyframe Tooling**: Install `SCXvid` if you want automatic keyframe extraction for scene-aware subtitle snapping. Without it, the pipeline still runs and simply skips keyframe extraction.
-4. **Google Cloud Account**:
-   - A Service Account JSON key with `Cloud Speech Administrator` and `Storage Object Admin`.
-   - A Google Cloud Storage Bucket (required for videos >1 minute).
+## Prerequisites
 
-### Installation
-Clone the repository and install the dependencies using `uv`:
-```bash
+1. Python 3.12+
+2. `uv`
+3. FFmpeg available on `PATH`
+4. Google Cloud credentials with:
+   - `GOOGLE_APPLICATION_CREDENTIALS`
+   - `GOOGLE_CLOUD_PROJECT`
+   - `AUTOSUB_GCS_BUCKET` for audio longer than about 60 seconds
+5. Optional: `SCXvid` if you want automatic keyframe extraction for scene-aware timing
+
+## Installation
+
+```powershell
 git clone https://github.com/yourusername/autosub.git
-cd autosub
+Set-Location autosub
 uv sync
 ```
 
-### Configuration
-Create a `.env` file in the root directory with your Google Cloud credentials:
-```bash
-GOOGLE_APPLICATION_CREDENTIALS="C:\path\to\your\key.json"
-AUTOSUB_GCS_BUCKET="your-staging-bucket-name"
-GOOGLE_CLOUD_PROJECT="your-project-id"
+## Configuration
+
+Create a `.env` file in the repo root:
+
+```dotenv
+GOOGLE_APPLICATION_CREDENTIALS=C:\path\to\service-account.json
+GOOGLE_CLOUD_PROJECT=your-project-id
+AUTOSUB_GCS_BUCKET=your-staging-bucket
 ```
 
-### Usage
+## Quick Start
 
-The easiest way to process a video is using the end-to-end `run` command.
+Run the full pipeline:
 
-**Full Pipeline (Transcribe -> Format -> Translate)**
-```bash
-uv run autosub run path/to/video.mp4 --profile date_sayuri
+```powershell
+uv run autosub run .\video.mp4 --profile suzuhara_nozomi
 ```
-This will automatically generate three files in the video's directory: `transcript.json`, `original.ass`, and `translated.ass`.
 
-#### Unified Profiles (TOML)
-`autosub` uses composable TOML profiles. You can configure custom vocabulary, translation instructions, and subtitle timing/layout rules in a single file located in the `profiles/` directory.
+For bilingual output:
 
-Example `profiles/date_sayuri.toml`:
+```powershell
+uv run autosub run .\video.mp4 --profile suzuhara_nozomi --bilingual
+```
+
+By default, `run` writes these files next to the input media:
+
+- `transcript.json`
+- `original.ass`
+- `translated.ass`
+
+If keyframe extraction is enabled and succeeds, it also writes `<input-stem>_keyframes.log`.
+
+## Running Stages Individually
+
+Transcribe:
+
+```powershell
+uv run autosub transcribe .\video.mp4 `
+  --out .\transcript.json `
+  --profile suzuhara_nozomi
+```
+
+Format with an existing keyframe log:
+
+```powershell
+uv run autosub format .\transcript.json `
+  --out .\original.ass `
+  --keyframes .\video_keyframes.log `
+  --fps 23.976 `
+  --profile suzuhara_nozomi
+```
+
+Translate with Vertex AI:
+
+```powershell
+uv run autosub translate .\original.ass `
+  --out .\translated.ass `
+  --profile suzuhara_nozomi `
+  --engine vertex `
+  --bilingual
+```
+
+Postprocess a translated file explicitly:
+
+```powershell
+uv run autosub postprocess .\translated.ass `
+  --profile suzuhara_nozomi `
+  --bilingual
+```
+
+## Command Reference
+
+### `autosub transcribe`
+
+- `--out`, `-o`: Output transcript path. Default: `transcript.json`
+- `--language`, `-l`: Speech recognition language code. Default: `ja-JP`
+- `--vocab`, `-v`: Additional speech adaptation hints. Can be passed multiple times.
+- `--profile`: Loads profile vocabulary.
+- `--speakers`, `-s`: Reserved for future diarization support. Currently ignored.
+
+Behavior notes:
+
+- Audio shorter than about 60 seconds is sent directly to the API.
+- Longer audio is uploaded to GCS first and transcribed as a batch job.
+
+### `autosub format`
+
+- `--out`: Output `.ass` path. Default: `original.ass` in the transcript directory
+- `--keyframes`: Path to an Aegisub keyframe log
+- `--fps`: Required when `--keyframes` is used
+- `--profile`: Loads `[timing]` and `[extensions]`
+
+Behavior notes:
+
+- Chunking is punctuation- and pause-aware.
+- If speaker labels are already present in the transcript JSON, chunking is done per speaker and the generated `.ass` file gets one style per speaker.
+- The `radio_discourse` extension runs here when enabled.
+
+### `autosub translate`
+
+- `--out`: Output `.ass` path. Default: `translated.ass`
+- `--engine`, `-e`: `vertex` or `cloud-v3`
+- `--prompt`, `-p`: Extra translation guidance appended after profile prompts
+- `--profile`: Loads prompt text from the selected profile
+- `--target`: Target language code. Default: `en`
+- `--source`: Source language code. Default: `ja`
+- `--bilingual` / `--replace`: Stack Japanese above the translation, or replace text entirely
+
+Behavior notes:
+
+- `vertex` uses Vertex AI with `gemini-2.5-flash`.
+- `cloud-v3` uses Google Cloud Translation v3 and ignores custom prompt text.
+
+### `autosub postprocess`
+
+- `--out`: Output `.ass` path. Default: overwrite the input file
+- `--profile`: Loads `[extensions]`
+- `--bilingual` / `--replace`: Tells postprocess whether it is operating on stacked bilingual text or translated-only text
+
+Behavior notes:
+
+- Postprocessing only changes files when an enabled extension actually makes edits.
+- The built-in `run` command postprocesses `translated.ass` in place.
+
+### `autosub run`
+
+`run` combines the full pipeline above and accepts the main options from each stage:
+
+- `--out-dir`
+- `--language`
+- `--profile`
+- `--vocab`
+- `--engine`
+- `--prompt`
+- `--target`
+- `--source`
+- `--bilingual` / `--replace`
+- `--speakers` (currently ignored)
+- `--keyframes`
+- `--extract-keyframes` / `--no-extract-keyframes`
+
+## Unified Profile Format
+
+Profiles live in [`profiles`](./profiles) and are loaded by name with `--profile <name>`.
+
+Example:
+
 ```toml
-# Inherits rules and vocab from another profile!
-extends = ["base_radio_profile"]
+extends = ["solo_seiyuu_radio"]
 
-# Points to an external markdown file for LLM instructions
-prompt = "prompts/date_sayuri.md"
-
-# Custom hints for Speech-to-Text
+prompt = "prompts/suzuhara_nozomi.md"
 vocab = [
-    "Date Sayuri",
-    "Sayurin"
+    "鈴原希実",
+    "のんちゃん",
 ]
+speakers = 1
 
 [timing]
-min_duration_ms = 500
+min_duration_ms = 700
 snap_threshold_ms = 250
 conditional_snap_threshold_ms = 500
-max_line_width = 22
-max_lines_per_subtitle = 2
+
+[extensions.radio_discourse]
+enabled = true
+engine = "hybrid"
+model = "gemini-2.5-flash"
+scope = "full_script"
+window_size = 10
+window_overlap = 3
+split_framing_phrases = true
+label_roles = true
 ```
 
-By passing `--profile date_sayuri`, the pipeline will automatically apply these settings to transcription, formatting, and translation.
+### Profile Keys
 
----
+- `extends`: List of base profile names. Base profiles are loaded first.
+- `prompt`: Either inline text or a path ending in `.md` or `.txt`. File contents are loaded into the translation prompt.
+- `vocab`: List of speech adaptation hints. Inherited lists are appended.
+- `speakers`: Parsed and inherited, but not currently used by the active CLI pipeline.
+- `[timing]`: Timing options for the formatter.
+- `[extensions]`: Nested extension configuration shared by formatting and postprocessing.
 
-### Individual Step Execution
+### Prompt and Vocab Merge Rules
 
-You can also run each step of the pipeline manually. All commands accept `--profile`.
+- Prompt fragments are concatenated in inheritance order: base profile first, child profile after that, then CLI `--prompt` last.
+- Vocabulary entries are appended in the same order: base profile, child profile, then CLI `--vocab`.
 
-**Step 1: Transcribe Audio**
-Extracts the audio, processes it via Google Speech-to-Text, and saves a timestamped `.json` transcript.
-```bash
-uv run autosub transcribe video.mp4 --out transcript.json --profile date_sayuri
-```
-`--speakers` remains reserved for future diarization work and is ignored by the current single-speaker pipeline.
+### Timing Options Currently Wired Up
 
-**Step 2: Subtitle Formatting (.ass)**
-Converts the JSON transcript into a timed `.ass` subtitle file using semantic chunking, scene-aware timing rules, and Japanese-first two-line wrapping.
-```bash
-uv run autosub format transcript.json --out original.ass
-```
+These keys are currently consumed by the formatter:
 
-To enable scene-aware snapping from an existing Aegisub keyframe log, provide both the keyframe file and the source FPS:
-```bash
-uv run autosub format transcript.json --out original.ass --keyframes video_keyframes.log --fps 23.976
-```
+- `min_duration_ms`
+- `snap_threshold_ms`
+- `conditional_snap_threshold_ms`
 
-The end-to-end `run` command can also extract keyframes automatically when `SCXvid` is installed. If it is not installed, the pipeline logs a warning and continues without keyframe snapping.
+No layout-related profile keys are currently wired into the CLI formatter.
 
-**Step 3: Translation**
-Translates the `.ass` file using a pluggable translation engine. By default, it uses high-quality context-aware translation via **Gemini 2.5 Flash on Vertex AI**.
-```bash
-uv run autosub translate original.ass --out translated.ass --profile date_sayuri
-```
+## `radio_discourse` Extension
 
-#### Translation Engines
-- `vertex` (Default): Uses Gemini 2.5 Flash for context-aware, high-quality translation.
-- `cloud-v3`: Uses the standard Google Cloud Translation V3 (Literal translation fallback).
+The built-in `radio_discourse` extension is designed for solo seiyuu radio or listener-mail style content.
 
-```bash
-uv run autosub translate original.ass --engine cloud-v3
-```
+During **formatting**, it can:
+
+- split trailing framing phrases such as `といただきました。` into their own subtitle lines
+- classify lines as `host`, `listener_mail`, or `host_meta`
+- store the resolved role in the ASS event `Name` field
+
+During **postprocessing**, it can:
+
+- wrap translated `listener_mail` lines in quotation marks
+- in bilingual mode, quote only the translated bottom line and leave the original Japanese untouched
+
+Supported options:
+
+- `enabled`: Turn the extension on
+- `engine`: `rules`, `vertex`, or `hybrid`
+- `model`: Vertex model name for `vertex` or `hybrid`
+- `location`: Vertex region. Default: `us-central1`
+- `scope`: `full_script` or windowed classification
+- `window_size`: Window size for non-`full_script` classification
+- `window_overlap`: Window overlap for non-`full_script` classification
+- `split_framing_phrases`: Split host framing suffixes into separate lines before classification
+- `label_roles`: Persist the resolved role onto subtitle events
+
+`hybrid` uses rule-based labels first and falls back to them if Vertex classification fails.

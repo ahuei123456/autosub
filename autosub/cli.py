@@ -13,7 +13,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(help="AutoSub CLI for single-speaker Japanese subtitle generation")
+app = typer.Typer(help="AutoSub CLI for Japanese subtitle generation and translation")
 
 
 @app.callback()
@@ -47,7 +47,7 @@ def transcribe(
     profile: str = typer.Option(
         None,
         "--profile",
-        help="Profile name to load vocabulary and translation prompt settings.",
+        help="Profile name to load transcription vocabulary hints.",
     ),
     speakers: int = typer.Option(
         None,
@@ -57,7 +57,7 @@ def transcribe(
     ),
 ):
     """
-    Extracts audio and transcribes single-speaker Japanese speech with Google Cloud Speech-to-Text.
+    Extracts audio and transcribes Japanese speech with Google Cloud Speech-to-Text.
     """
     logger.info(f"Starting transcription pipeline for: {video_path}")
 
@@ -101,11 +101,13 @@ def format(
         0.0, "--fps", help="Video FPS, required if --keyframes is used."
     ),
     profile: str = typer.Option(
-        None, "--profile", help="Profile name to load timing configuration."
+        None,
+        "--profile",
+        help="Profile name to load timing and formatting extension configuration.",
     ),
 ):
     """
-    Step 2: Converts a transcript JSON into timed, wrapped single-lane .ass subtitles.
+    Step 2: Converts a transcript JSON into timed single-lane .ass subtitles.
     """
     if not out:
         out = input_transcript.with_name("original.ass")
@@ -165,7 +167,7 @@ def translate(
     profile: str = typer.Option(
         None,
         "--profile",
-        help="Profile name to load vocabulary and translation prompt settings.",
+        help="Profile name to load translation prompt settings.",
     ),
     target_lang: str = typer.Option("en", "--target", help="Target language code."),
     source_lang: str = typer.Option("ja", "--source", help="Source language code."),
@@ -263,7 +265,9 @@ def run(
         "ja-JP", "--language", "-l", help="Language code for transcription (e.g. ja-JP)"
     ),
     profile: str = typer.Option(
-        None, "--profile", help="Profile name to load vocabulary and prompt settings."
+        None,
+        "--profile",
+        help="Profile name to load vocabulary, timing, prompt, and extension settings.",
     ),
     vocab: list[str] = typer.Option(
         None, "--vocab", "-v", help="Custom transcription hints."
@@ -297,7 +301,7 @@ def run(
     ),
 ):
     """
-    Runs the end-to-end single-speaker Japanese pipeline (Transcribe -> Format -> Translate -> Postprocess).
+    Runs the end-to-end Japanese pipeline (Transcribe -> Format -> Translate -> Postprocess).
     """
     logger.info(f"Starting full autosub pipeline for: {video_path}")
 
