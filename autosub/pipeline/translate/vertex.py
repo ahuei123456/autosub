@@ -53,15 +53,13 @@ class VertexTranslator(BaseTranslator):
         )
 
         # Initialize the Vertex AI client using Application Default Credentials
-        client = genai.Client(
-            vertexai=True, project=self.project_id, location="us-central1"
-        )
+        client = genai.Client(vertexai=True, project=self.project_id, location="global")
 
         prompt = self._build_prompt(texts)
 
-        # Use Gemini 2.5 Flash with structured output schema
+        # Use Gemini 3 Flash with structured output schema
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",

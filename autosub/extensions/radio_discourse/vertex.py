@@ -25,8 +25,8 @@ class VertexRadioDiscourseClassifier:
     def __init__(
         self,
         project_id: str,
-        model: str = "gemini-2.5-flash",
-        location: str = "us-central1",
+        model: str = "gemini-3-flash-preview",
+        location: str = "global",
     ):
         self.project_id = project_id
         self.model = model
@@ -111,8 +111,8 @@ def classify_roles_with_vertex(
 
     classifier = VertexRadioDiscourseClassifier(
         project_id=project_id,
-        model=config.get("model", "gemini-2.5-flash"),
-        location=config.get("location", "us-central1"),
+        model=config.get("model", "gemini-3-flash-preview"),
+        location=config.get("location", "global"),
     )
 
     windows = _build_windows_for_config(lines, config)

@@ -8,14 +8,14 @@ Automatic Japanese subtitle generation and translation pipeline for speech-heavy
 
 1. **Transcribe**: Extract audio, send it to Google Cloud Speech-to-Text (`chirp_2`), and write a word-timed `transcript.json`.
 2. **Format**: Chunk words into subtitle lines, optionally apply discourse-aware radio segmentation, apply timing and optional keyframe snapping, and write `original.ass`.
-3. **Translate**: Translate subtitle events with either Vertex AI (`gemini-2.5-flash`) or Cloud Translation v3, then write `translated.ass`.
+3. **Translate**: Translate subtitle events with either Vertex AI (`gemini-3-flash-preview`) or Cloud Translation v3, then write `translated.ass`.
 4. **Postprocess**: Apply profile-driven editorial cleanup to the translated `.ass` file. The built-in `run` command includes this step automatically.
 
 ```mermaid
 graph TD
     A[Video or Audio Input] --> B[Transcribe<br/>Google Speech-to-Text chirp_2]
     B --> C[Format<br/>Chunking + Timing + Optional Keyframe Snapping]
-    C --> D[Translate<br/>Vertex Gemini 2.5 Flash or Cloud Translation v3]
+    C --> D[Translate<br/>Vertex Gemini 3 Flash or Cloud Translation v3]
     D --> E[Postprocess<br/>Profile Extensions]
     E --> F[Final translated.ass]
 ```
@@ -165,7 +165,7 @@ Behavior notes:
 
 Behavior notes:
 
-- `vertex` uses Vertex AI with `gemini-2.5-flash`.
+- `vertex` uses Vertex AI with `gemini-3-flash-preview`.
 - `cloud-v3` uses Google Cloud Translation v3 and ignores custom prompt text.
 
 ### `autosub postprocess`
@@ -220,7 +220,7 @@ conditional_snap_threshold_ms = 500
 [extensions.radio_discourse]
 enabled = true
 engine = "hybrid"
-model = "gemini-2.5-flash"
+model = "gemini-3-flash-preview"
 scope = "full_script"
 window_size = 10
 window_overlap = 3
