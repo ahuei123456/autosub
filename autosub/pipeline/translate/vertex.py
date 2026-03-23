@@ -35,8 +35,11 @@ class VertexTranslator(BaseTranslator):
             f"5. Keep the tone, emotional intent, and speaker persona intact.\n"
             f"6. Keep translations concise enough to work as readable subtitles.\n"
             f"7. If a line contains a catchphrase, segment title, fandom reference, or recurring term, translate it consistently with the provided context.\n"
-            f"8. Prefer ending subtitle lines on natural punctuation whenever possible. If a clause can end with a comma, period, question mark, or exclamation point, keep that punctuation at the end of the line instead of leaving a dangling conjunction or connective there.\n"
-            f"9. Move trailing connectives such as 'but', 'and', 'so', 'because', 'though', or 'then' onto the following line.\n"
+            f"8. If a Glossary is provided in the context, you MUST use the exact English translations specified for those terms.\n"
+            f"9. Prefer ending subtitle lines on natural punctuation whenever possible. If a clause can end with a comma, period, question mark, or exclamation point, keep that punctuation at the end of the line instead of leaving a dangling conjunction or connective there.\n"
+            f"10. Move trailing connectives such as 'but', 'and', 'so', 'because', 'though', or 'then' onto the following line.\n"
+            f"11. Only use single quotes for contractions. Anywhere else, always use double quotation marks.\n"
+            f"12. If a name is a Japanese name, preserve Japanese name order when translating.\n"
         )
         if self.system_prompt:
             prompt += f"\nSpeaker and style context:\n{self.system_prompt.strip()}\n"

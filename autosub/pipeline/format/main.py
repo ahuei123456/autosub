@@ -17,6 +17,7 @@ def format_subtitles(
     video_duration_ms: int | None = None,
     timing_config: dict | None = None,
     extensions_config: dict | None = None,
+    replacements: dict[str, str] | None = None,
 ) -> None:
     """
     Reads a transcript.json file, chunks the transcribed words into semantic lines,
@@ -36,6 +37,12 @@ def format_subtitles(
     logger.info("Chunking transcript into semantic subtitle lines...")
     lines = chunker.chunk_words_to_lines(transcript.words)
     logger.info(f"Generated {len(lines)} subtitle lines.")
+
+    if replacements:
+        logger.info(f"Applying {len(replacements)} text replacements...")
+        for line in lines:
+            for old_str, new_str in replacements.items():
+                line.text = line.text.replace(old_str, new_str)
 
     if not extensions_config:
         extensions_config = {}

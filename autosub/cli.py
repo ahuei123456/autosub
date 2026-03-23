@@ -118,10 +118,12 @@ def format(
 
     timing_config = {}
     extensions_config = {}
+    replacements = {}
     if profile:
         profile_data = load_unified_profile(profile)
         timing_config = profile_data.get("timing", {})
         extensions_config = profile_data.get("extensions", {})
+        replacements = profile_data.get("replacements", {})
 
     kf_ms = None
     if keyframes and fps > 0:
@@ -136,6 +138,7 @@ def format(
             keyframes=kf_ms,
             timing_config=timing_config,
             extensions_config=extensions_config,
+            replacements=replacements,
         )
     except Exception as e:
         logger.error(f"Error during formatting: {e}")
@@ -187,6 +190,13 @@ def translate(
     if profile:
         profile_data = load_unified_profile(profile)
         final_prompt_parts.extend(profile_data["prompt"])
+
+        if profile_data.get("glossary"):
+            glossary_text = "Glossary (Always translate these exact phrases):\n"
+            for ja, en in profile_data["glossary"].items():
+                glossary_text += f'- "{ja}" -> "{en}"\n'
+            final_prompt_parts.append(glossary_text)
+
     if prompt:
         final_prompt_parts.append(prompt)
 
@@ -319,6 +329,7 @@ def run(
     final_prompt_parts = []
     final_timing = {}
     final_extensions = {}
+    replacements = {}
     profile_speakers_requested = False
     if profile:
         profile_data = load_unified_profile(profile)
@@ -326,7 +337,15 @@ def run(
         final_prompt_parts.extend(profile_data["prompt"])
         final_timing = profile_data.get("timing", {})
         final_extensions = profile_data.get("extensions", {})
+        replacements = profile_data.get("replacements", {})
         profile_speakers_requested = bool(profile_data.get("speakers"))
+
+        if profile_data.get("glossary"):
+            glossary_text = "Glossary (Always translate these exact phrases):\n"
+            for ja, en in profile_data["glossary"].items():
+                glossary_text += f'- "{ja}" -> "{en}"\n'
+            final_prompt_parts.append(glossary_text)
+
     if vocab:
         final_vocab.extend(vocab)
     if prompt:
@@ -395,6 +414,7 @@ def run(
             video_duration_ms=vid_duration_ms,
             timing_config=final_timing,
             extensions_config=final_extensions,
+            replacements=replacements,
         )
     except Exception as e:
         logger.error(f"Failed during formatting: {e}")

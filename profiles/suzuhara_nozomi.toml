@@ -68,3 +68,19 @@ vocab = [
     "本当に",
     "なんか",
 ]
+
+[replacements]
+"鈴原のぞみ" = "鈴原希実"
+"鈴原のすみ" = "鈴原希実"
+"の番は" = "のんばんは"
+"のん番は" = "のんばんは"
+"ノンバーワン" = "のんばんは"
+"のんばわ" = "のんばんは"
+"のんばは" = "のんばんは"
+"明日は何視聴と" = "明日はなんしちょっと？"
+
+[glossary]
+"鈴原希実の明日はなんしちょっと" = "Suzuhara Nozomi's What's The Go For Tomorrow"
+"のんばんは" = "Good evenon"
+"のんしちょっと" = "Nonshichotto"
+"鈴原希実" = "Suzuhara Nozomi"

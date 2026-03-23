@@ -31,6 +31,8 @@ def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> 
             "speakers": None,
             "timing": {},
             "extensions": {},
+            "glossary": {},
+            "replacements": {},
         }
     visited.add(profile_name)
 
@@ -43,6 +45,8 @@ def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> 
             "speakers": None,
             "timing": {},
             "extensions": {},
+            "glossary": {},
+            "replacements": {},
         }
 
     try:
@@ -56,6 +60,8 @@ def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> 
             "speakers": None,
             "timing": {},
             "extensions": {},
+            "glossary": {},
+            "replacements": {},
         }
 
     combined_prompt = []
@@ -63,6 +69,8 @@ def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> 
     final_speakers = None
     final_timing = {}
     final_extensions = {}
+    final_glossary = {}
+    final_replacements = {}
 
     # 1. Process base profiles recursively (so base instructions come first)
     for base in data.get("extends", []):
@@ -78,6 +86,8 @@ def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> 
         final_extensions = _merge_nested_dict(
             final_extensions, base_data.get("extensions", {})
         )
+        final_glossary.update(base_data.get("glossary", {}))
+        final_replacements.update(base_data.get("replacements", {}))
 
     # 2. Append this profile's data
     if "prompt" in data:
@@ -119,10 +129,26 @@ def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> 
         else:
             logger.warning(f"'extensions' in {profile_name} must be a TOML table/dict.")
 
+    if "glossary" in data:
+        if isinstance(data["glossary"], dict):
+            final_glossary.update(data["glossary"])
+        else:
+            logger.warning(f"'glossary' in {profile_name} must be a TOML table/dict.")
+
+    if "replacements" in data:
+        if isinstance(data["replacements"], dict):
+            final_replacements.update(data["replacements"])
+        else:
+            logger.warning(
+                f"'replacements' in {profile_name} must be a TOML table/dict."
+            )
+
     return {
         "prompt": combined_prompt,
         "vocab": combined_vocab,
         "speakers": final_speakers,
         "timing": final_timing,
         "extensions": final_extensions,
+        "glossary": final_glossary,
+        "replacements": final_replacements,
     }
