@@ -232,6 +232,12 @@ __marimo__/
 *.alac
 *.aiff
 
+# Image formats
+*.jpg
+*.png
+*.jpeg
+*.webp
+
 # Subtitles and other media-related files (optional, but often good to ignore too)
 # *.srt
 # *.vtt
