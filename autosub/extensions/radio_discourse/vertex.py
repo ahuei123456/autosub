@@ -32,16 +32,7 @@ class VertexRadioDiscourseClassifier:
         self.model = model
         self.location = location
 
-    def _build_prompt(self, lines: list[tuple[int, SubtitleLine]]) -> str:
-        payload = [
-            {
-                "id": line_id,
-                "text": line.text,
-            }
-            for line_id, line in lines
-        ]
-        payload_str = json.dumps(payload, ensure_ascii=False, indent=2)
-
+    def _get_system_instruction(self) -> str:
         return (
             "You are analyzing a Japanese solo voice-actress radio show transcript for subtitle segmentation.\n"
             "Task: Classify each subtitle line as one of three discourse roles.\n\n"
@@ -62,8 +53,7 @@ class VertexRadioDiscourseClassifier:
             "10. If one line appears to mix a listener greeting with a host echo and then continues the actual letter, classify it according to the dominant informational content of the line. In most such cases, prefer listener_mail if the line mainly contains the listener's actual message content.\n"
             "11. Return valid JSON only.\n"
             "12. Return the exact same number of items as the input.\n"
-            "13. Each item must contain exactly two fields: 'id' and 'role'.\n\n"
-            f"Input JSON:\n{payload_str}"
+            "13. Each item must contain exactly two fields: 'id' and 'role'.\n"
         )
 
     def classify_window(self, lines: list[tuple[int, SubtitleLine]]) -> dict[int, str]:
@@ -73,12 +63,21 @@ class VertexRadioDiscourseClassifier:
         client = genai.Client(
             vertexai=True, project=self.project_id, location=self.location
         )
-        prompt = self._build_prompt(lines)
+        system_instruction = self._get_system_instruction()
+        payload = [
+            {
+                "id": line_id,
+                "text": line.text,
+            }
+            for line_id, line in lines
+        ]
+        contents = json.dumps(payload, ensure_ascii=False, indent=2)
 
         response = client.models.generate_content(
             model=self.model,
-            contents=prompt,
+            contents=contents,
             config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
                 response_mime_type="application/json",
                 response_schema=list[RadioDiscourseDecision],
                 temperature=0.1,

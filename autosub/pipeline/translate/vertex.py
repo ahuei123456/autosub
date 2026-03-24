@@ -15,11 +15,8 @@ class TranslatedSubtitle(BaseModel):
 
 
 class VertexTranslator(BaseTranslator):
-    def _build_prompt(self, texts: list[str]) -> str:
-        payload = [{"id": i, "text": t} for i, t in enumerate(texts)]
-        payload_str = json.dumps(payload, ensure_ascii=False, indent=2)
-
-        prompt = (
+    def _get_system_instruction(self) -> str:
+        instruction = (
             f"You are a professional subtitle translator and localizer.\n"
             f"Task: Translate the following JSON array of subtitle lines from {self.source_lang} to {self.target_lang}.\n\n"
             f"Output requirements:\n"
@@ -42,10 +39,10 @@ class VertexTranslator(BaseTranslator):
             f"12. If a name is a Japanese name, preserve Japanese name order when translating.\n"
         )
         if self.system_prompt:
-            prompt += f"\nSpeaker and style context:\n{self.system_prompt.strip()}\n"
-
-        prompt += f"\nInput JSON:\n{payload_str}"
-        return prompt
+            instruction += (
+                f"\nSpeaker and style context:\n{self.system_prompt.strip()}\n"
+            )
+        return instruction
 
     def translate(self, texts: list[str]) -> list[str]:
         if not texts:
@@ -58,13 +55,16 @@ class VertexTranslator(BaseTranslator):
         # Initialize the Vertex AI client using Application Default Credentials
         client = genai.Client(vertexai=True, project=self.project_id, location="global")
 
-        prompt = self._build_prompt(texts)
+        system_instruction = self._get_system_instruction()
+        payload = [{"id": i, "text": t} for i, t in enumerate(texts)]
+        contents = json.dumps(payload, ensure_ascii=False, indent=2)
 
         # Use Gemini 3 Flash with structured output schema
         response = client.models.generate_content(
             model="gemini-3-flash-preview",
-            contents=prompt,
+            contents=contents,
             config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
                 response_mime_type="application/json",
                 response_schema=list[TranslatedSubtitle],
                 temperature=0.1,  # Low temperature to avoid hallucination inside JSON

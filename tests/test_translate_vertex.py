@@ -9,16 +9,12 @@ def test_vertex_prompt_includes_line_ending_style_guidance():
         system_prompt="Keep the host warm and conversational.",
     )
 
-    prompt = translator._build_prompt(
-        [
-            "Also, my hair today... I wonder if you can tell. It might be hard to tell from a photo, but",
-            "I made it a bit brown.",
-        ]
-    )
+    instruction = translator._get_system_instruction()
 
     assert (
         "Prefer ending subtitle lines on natural punctuation whenever possible"
-        in prompt
+        in instruction
     )
-    assert "Move trailing connectives such as 'but', 'and', 'so'" in prompt
-    assert "Speaker and style context:" in prompt
+    assert "Move trailing connectives such as 'but', 'and', 'so'" in instruction
+    assert "Speaker and style context:" in instruction
+    assert "Keep the host warm and conversational." in instruction

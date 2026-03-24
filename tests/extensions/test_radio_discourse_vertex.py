@@ -9,31 +9,13 @@ from autosub.extensions.radio_discourse.vertex import (
 def test_vertex_radio_discourse_prompt_describes_roles():
     classifier = VertexRadioDiscourseClassifier(project_id="test-project")
 
-    prompt = classifier._build_prompt(
-        [
-            (
-                0,
-                SubtitleLine(
-                    text="ではメッセージをご紹介していきます。",
-                    start_time=0.0,
-                    end_time=1.0,
-                ),
-            ),
-            (
-                1,
-                SubtitleLine(
-                    text="メールを送るのは初めてです。", start_time=1.0, end_time=2.0
-                ),
-            ),
-        ]
-    )
+    instruction = classifier._get_system_instruction()
 
-    assert "host_meta" in prompt
-    assert "listener_mail" in prompt
-    assert "Do not rewrite or normalize the text" in prompt
-    assert "のちゃん、の番は?" in prompt
-    assert "ノンバーワン。" in prompt
-    assert '"id": 0' in prompt
+    assert "host_meta" in instruction
+    assert "listener_mail" in instruction
+    assert "Do not rewrite or normalize the text" in instruction
+    assert "のちゃん、の番は?" in instruction
+    assert "ノンバーワン。" in instruction
 
 
 def test_apply_radio_discourse_hybrid_uses_vertex_roles(monkeypatch):
