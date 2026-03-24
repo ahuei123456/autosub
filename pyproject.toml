@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "better-ffmpeg-progress>=4.0.1",
     "ffmpeg-python>=0.2.0",
     "google-cloud-speech>=2.36.1",
     "google-cloud-storage>=3.9.0",
