@@ -9,7 +9,7 @@ def test_vertex_prompt_includes_line_ending_style_guidance():
         system_prompt="Keep the host warm and conversational.",
     )
 
-    instruction = translator._get_system_instruction()
+    instruction = translator._get_system_instruction(0)
 
     assert (
         "Prefer ending subtitle lines on natural punctuation whenever possible"

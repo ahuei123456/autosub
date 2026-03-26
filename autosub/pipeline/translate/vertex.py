@@ -15,13 +15,13 @@ class TranslatedSubtitle(BaseModel):
 
 
 class VertexTranslator(BaseTranslator):
-    def _get_system_instruction(self) -> str:
+    def _get_system_instruction(self, num_lines: int) -> str:
         instruction = (
             f"You are a professional subtitle translator and localizer.\n"
             f"Task: Translate the following JSON array of subtitle lines from {self.source_lang} to {self.target_lang}.\n\n"
             f"Output requirements:\n"
             f"1. Return valid JSON only.\n"
-            f"2. Return the exact same number of items as the input.\n"
+            f"2. You must return exactly {num_lines} items in the json, the same number of lines as the input.\n"
             f"3. Each item must contain exactly two fields: 'id' and 'translated'.\n"
             f"4. Preserve item order and keep each translation matched to its original id.\n\n"
             f"Translation requirements:\n"
@@ -55,7 +55,7 @@ class VertexTranslator(BaseTranslator):
         # Initialize the Vertex AI client using Application Default Credentials
         client = genai.Client(vertexai=True, project=self.project_id, location="global")
 
-        system_instruction = self._get_system_instruction()
+        system_instruction = self._get_system_instruction(len(texts))
         payload = [{"id": i, "text": t} for i, t in enumerate(texts)]
         contents = json.dumps(payload, ensure_ascii=False, indent=2)
 

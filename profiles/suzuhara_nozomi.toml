@@ -77,10 +77,14 @@ vocab = [
 "ノンバーワン" = "のんばんは"
 "のんばわ" = "のんばんは"
 "のんばは" = "のんばんは"
-"明日は何視聴と" = "明日はなんしちょっと？"
+"明日は何視聴と" = "明日はなんしちょっと"
+"明日は何しちゃっと" = "明日はなんしちょっと"
+"のんのネーム" = "のんのんネーム"
 
 [glossary]
 "鈴原希実の明日はなんしちょっと" = "Suzuhara Nozomi's What's The Go For Tomorrow"
 "のんばんは" = "Good evenon"
 "のんしちょっと" = "Nonshichotto"
 "鈴原希実" = "Suzuhara Nozomi"
+"のんちゃん" = "Nonchan"
+"のんのんネーム" = "Nonnon-name"

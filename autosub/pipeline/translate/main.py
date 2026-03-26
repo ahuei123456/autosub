@@ -82,7 +82,7 @@ def translate_subtitles(
 
     if len(translated_texts) != len(events_to_translate):
         raise ValueError(
-            "Translation API returned a different number of results than expected."
+            f"Translation API expected {len(events_to_translate)} translations, but got {len(translated_texts)}"
         )
 
     logger.info("Applying translations to subtitle events...")
