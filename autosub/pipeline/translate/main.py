@@ -159,17 +159,48 @@ def _translate_with_retry(translator, texts: list[str], label: str = "") -> list
 
 
 def _load_checkpoint(checkpoint_path: Path) -> dict[int, list[str]]:
-    """Load completed chunk results from checkpoint file."""
+    """Load and validate completed chunk results from checkpoint file.
+
+    Expected structure: {"0": ["str", ...], "1": ["str", ...], ...}
+    Keys must be non-negative integer strings, values must be non-empty lists of strings.
+    Invalid entries are skipped with a warning.
+    """
     if not checkpoint_path.exists():
         return {}
     try:
         with open(checkpoint_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        # Keys are stored as strings in JSON, convert back to int
-        return {int(k): v for k, v in data.items()}
     except Exception as e:
         logger.warning(f"Failed to load checkpoint, starting fresh: {e}")
         return {}
+
+    if not isinstance(data, dict):
+        logger.warning(f"Checkpoint is not a JSON object, starting fresh.")
+        return {}
+
+    validated: dict[int, list[str]] = {}
+    for k, v in data.items():
+        try:
+            chunk_idx = int(k)
+        except (ValueError, TypeError):
+            logger.warning(f"Skipping checkpoint entry with non-integer key: {k!r}")
+            continue
+
+        if chunk_idx < 0:
+            logger.warning(f"Skipping checkpoint entry with negative key: {chunk_idx}")
+            continue
+
+        if not isinstance(v, list) or not v:
+            logger.warning(f"Skipping checkpoint entry {chunk_idx}: value must be a non-empty list.")
+            continue
+
+        if not all(isinstance(s, str) for s in v):
+            logger.warning(f"Skipping checkpoint entry {chunk_idx}: list contains non-string elements.")
+            continue
+
+        validated[chunk_idx] = v
+
+    return validated
 
 
 def _save_checkpoint(

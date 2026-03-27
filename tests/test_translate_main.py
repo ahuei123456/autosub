@@ -133,6 +133,47 @@ def test_load_checkpoint_corrupt_file(tmp_path):
     assert _load_checkpoint(checkpoint_path) == {}
 
 
+def test_load_checkpoint_not_a_dict(tmp_path):
+    checkpoint_path = tmp_path / "bad.json"
+    checkpoint_path.write_text('["a", "b"]')
+    assert _load_checkpoint(checkpoint_path) == {}
+
+
+def test_load_checkpoint_skips_non_integer_keys(tmp_path):
+    checkpoint_path = tmp_path / "bad_keys.json"
+    checkpoint_path.write_text('{"0": ["a"], "foo": ["b"], "1": ["c"]}')
+    result = _load_checkpoint(checkpoint_path)
+    assert result == {0: ["a"], 1: ["c"]}
+
+
+def test_load_checkpoint_skips_negative_keys(tmp_path):
+    checkpoint_path = tmp_path / "neg.json"
+    checkpoint_path.write_text('{"-1": ["a"], "0": ["b"]}')
+    result = _load_checkpoint(checkpoint_path)
+    assert result == {0: ["b"]}
+
+
+def test_load_checkpoint_skips_empty_lists(tmp_path):
+    checkpoint_path = tmp_path / "empty.json"
+    checkpoint_path.write_text('{"0": ["a"], "1": []}')
+    result = _load_checkpoint(checkpoint_path)
+    assert result == {0: ["a"]}
+
+
+def test_load_checkpoint_skips_non_list_values(tmp_path):
+    checkpoint_path = tmp_path / "bad_vals.json"
+    checkpoint_path.write_text('{"0": ["a"], "1": "not a list", "2": 42}')
+    result = _load_checkpoint(checkpoint_path)
+    assert result == {0: ["a"]}
+
+
+def test_load_checkpoint_skips_non_string_elements(tmp_path):
+    checkpoint_path = tmp_path / "bad_elems.json"
+    checkpoint_path.write_text('{"0": ["a", "b"], "1": [1, 2]}')
+    result = _load_checkpoint(checkpoint_path)
+    assert result == {0: ["a", "b"]}
+
+
 @patch("autosub.pipeline.translate.main.RETRY_BASE_DELAY", 0)
 def test_chunked_resumes_from_checkpoint(tmp_path):
     """Simulate a previous run that completed chunks 0 and 1, then resume."""
