@@ -57,9 +57,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--fps",
-        type=int,
-        default=DEFAULT_OUTPUT_FPS,
-        help=f"Output video FPS for the still-image stream. Default: {DEFAULT_OUTPUT_FPS}.",
+        type=float,
+        default=None,
+        help=(
+            "Output video FPS for the still-image stream. "
+            "Defaults to the source video FPS."
+        ),
     )
     parser.add_argument(
         "--crf",
@@ -131,6 +134,49 @@ def require_ffmpeg() -> None:
         raise RuntimeError("ffmpeg was not found in PATH.")
 
 
+def parse_frame_rate(rate: str | None) -> float:
+    if not rate:
+        return 0.0
+
+    if "/" in rate:
+        num_text, den_text = rate.split("/", 1)
+        num = float(num_text)
+        den = float(den_text)
+        if den == 0:
+            return 0.0
+        return num / den
+
+    return float(rate)
+
+
+def get_video_fps(video_path: Path) -> float:
+    try:
+        probe = ffmpeg.probe(video_path.as_posix())
+    except ffmpeg.Error as exc:
+        stderr = exc.stderr.decode("utf-8", errors="replace") if exc.stderr else ""
+        raise RuntimeError(
+            f"Could not probe source video FPS for {video_path}: {stderr or exc}"
+        ) from exc
+
+    video_stream = next(
+        (
+            stream
+            for stream in probe.get("streams", [])
+            if stream.get("codec_type") == "video"
+        ),
+        None,
+    )
+    if not video_stream:
+        raise RuntimeError(f"No video stream found in {video_path}")
+
+    for field in ("avg_frame_rate", "r_frame_rate"):
+        fps = parse_frame_rate(video_stream.get(field))
+        if fps > 0:
+            return fps
+
+    raise RuntimeError(f"Could not determine source video FPS for {video_path}")
+
+
 def run_ffmpeg(stream: Any, overwrite: bool = False) -> None:
     if overwrite:
         stream = ffmpeg.overwrite_output(stream)
@@ -151,7 +197,13 @@ def ensure_output_paths(paths: JobPaths, overwrite: bool) -> None:
 
 
 def escape_filter_path(path: Path) -> str:
-    escaped = path.resolve().as_posix()
+    resolved = path.resolve()
+    try:
+        filter_path = resolved.relative_to(Path.cwd().resolve()).as_posix()
+    except ValueError:
+        filter_path = resolved.as_posix()
+
+    escaped = filter_path
     for char in ("\\", ":", "'", "[", "]", ",", ";"):
         escaped = escaped.replace(char, f"\\{char}")
     return escaped
@@ -183,41 +235,72 @@ def upscale_frame(paths: JobPaths, overwrite: bool) -> None:
 
 def build_final_command(
     paths: JobPaths,
-    fps: int,
+    fps: float,
     crf: int,
     preset: str,
     audio_bitrate: str,
     overwrite: bool,
 ) -> list[str]:
-    a_in = ffmpeg.input(paths.input_video.as_posix())
-    v_in = ffmpeg.input(paths.upscaled_image.as_posix(), loop=1, framerate=fps)
-
-    v = v_in.video
-    if paths.subtitle:
-        v = v.filter("subtitles", filename=escape_filter_path(paths.subtitle))
-
-    output_args = {
-        "vcodec": "libx264",
-        "preset": preset,
-        "crf": crf,
-        "pix_fmt": "yuv420p",
-        "acodec": "aac",
-        "b:a": audio_bitrate,
-        "shortest": None,
-    }
-    if paths.subtitle:
-        output_args["movflags"] = "+faststart"
-
-    stream = ffmpeg.output(v, a_in.audio, paths.output_video.as_posix(), **output_args)
+    command = ["ffmpeg"]
     if overwrite:
-        stream = stream.overwrite_output()
-    return stream.compile()
+        command.append("-y")
+
+    command.extend(
+        [
+            "-i",
+            paths.input_video.as_posix(),
+            "-framerate",
+            str(fps),
+            "-loop",
+            "1",
+            "-i",
+            paths.upscaled_image.as_posix(),
+        ]
+    )
+
+    if paths.subtitle:
+        command.extend(
+            [
+                "-filter_complex",
+                f"[1:v]subtitles=filename='{escape_filter_path(paths.subtitle)}'[v]",
+                "-map",
+                "[v]",
+            ]
+        )
+    else:
+        command.extend(["-map", "1:v:0"])
+
+    command.extend(
+        [
+            "-map",
+            "0:a:0",
+            "-vcodec",
+            "libx264",
+            "-preset",
+            preset,
+            "-crf",
+            str(crf),
+            "-pix_fmt",
+            "yuv420p",
+            "-acodec",
+            "aac",
+            "-b:a",
+            audio_bitrate,
+            "-shortest",
+        ]
+    )
+
+    if paths.subtitle:
+        command.extend(["-movflags", "+faststart"])
+
+    command.append(paths.output_video.as_posix())
+    return command
 
 
 def create_video(
     paths: JobPaths,
     overwrite: bool,
-    fps: int,
+    fps: float,
     crf: int,
     preset: str,
     audio_bitrate: str,
@@ -236,8 +319,10 @@ def create_video(
 
 def main() -> int:
     args = parse_args()
-    if args.fps <= 0 or args.crf < 0:
-        raise ValueError("Invalid FPS or CRF values.")
+    if args.fps is not None and args.fps <= 0:
+        raise ValueError("--fps must be greater than 0.")
+    if args.crf < 0:
+        raise ValueError("--crf must be 0 or greater.")
 
     require_ffmpeg()
     paths = resolve_job_paths(
@@ -248,6 +333,7 @@ def main() -> int:
         args.upscaled_image,
     )
     ensure_output_paths(paths, args.overwrite)
+    fps = float(args.fps) if args.fps is not None else get_video_fps(paths.input_video)
 
     steps = [
         ("Extracting frame", lambda: extract_first_frame(paths, args.overwrite)),
@@ -257,7 +343,7 @@ def main() -> int:
             lambda: create_video(
                 paths,
                 args.overwrite,
-                args.fps,
+                fps,
                 args.crf,
                 args.preset,
                 args.audio_bitrate,

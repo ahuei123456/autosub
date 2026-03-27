@@ -1,12 +1,24 @@
 from pathlib import Path
 import logging
+from typing import Any, cast
 from uuid import uuid4
 
 from autosub.pipeline.transcribe import audio, gcs, api
 from autosub.core.schemas import TranscribedWord, TranscriptionResult
 from autosub.core.config import GCS_BUCKET, PROJECT_ID
+from autosub.core.utils import parse_timestamp
 
 logger = logging.getLogger(__name__)
+
+
+def _duration_seconds(value: Any) -> float:
+    total_seconds = getattr(value, "total_seconds", None)
+    if callable(total_seconds):
+        return float(cast(Any, total_seconds()))
+
+    seconds = float(getattr(value, "seconds", 0))
+    nanos = float(getattr(value, "nanos", 0))
+    return seconds + (nanos / 1_000_000_000)
 
 
 def transcribe(
@@ -15,6 +27,8 @@ def transcribe(
     language_code: str = "ja-JP",
     vocabulary: list[str] | None = None,
     num_speakers: int | None = None,
+    start_time: str | None = None,
+    end_time: str | None = None,
 ) -> TranscriptionResult:
     """
     End-to-end transcription of a video file:
@@ -27,12 +41,13 @@ def transcribe(
         raise ValueError("AUTOSUB_PROJECT_ID is not set in the environment.")
 
     logger.info(f"Extracting audio from {video_path}...")
-    audio_path = audio.extract_audio(video_path)
+    audio_path = audio.extract_audio(video_path, start_time, end_time)
 
     duration = audio.get_audio_duration(audio_path)
     logger.info(f"Audio duration: {duration:.2f} seconds")
 
     words_data = []
+    offset = parse_timestamp(start_time) if start_time else 0.0
 
     try:
         if duration > 60:
@@ -63,8 +78,9 @@ def transcribe(
                             words_data.append(
                                 TranscribedWord(
                                     word=w.word,
-                                    start_time=w.start_offset.total_seconds(),  # type: ignore
-                                    end_time=w.end_offset.total_seconds(),  # type: ignore
+                                    start_time=_duration_seconds(w.start_offset)
+                                    + offset,
+                                    end_time=_duration_seconds(w.end_offset) + offset,
                                     speaker=w.speaker_label
                                     if hasattr(w, "speaker_label")
                                     else None,
@@ -89,8 +105,8 @@ def transcribe(
                         words_data.append(
                             TranscribedWord(
                                 word=w.word,
-                                start_time=w.start_offset.total_seconds(),  # type: ignore
-                                end_time=w.end_offset.total_seconds(),  # type: ignore
+                                start_time=_duration_seconds(w.start_offset) + offset,
+                                end_time=_duration_seconds(w.end_offset) + offset,
                                 speaker=w.speaker_label
                                 if hasattr(w, "speaker_label")
                                 else None,

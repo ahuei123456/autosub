@@ -55,6 +55,16 @@ def transcribe(
         "-s",
         help="Reserved for future diarization work. Ignored by the current single-speaker pipeline.",
     ),
+    start: str = typer.Option(
+        None,
+        "--start",
+        help="Start time for transcription (e.g. 00:01:00 or 60).",
+    ),
+    end: str = typer.Option(
+        None,
+        "--end",
+        help="End time for transcription (e.g. 00:04:00 or 240).",
+    ),
 ):
     """
     Extracts audio and transcribes Japanese speech with Google Cloud Speech-to-Text.
@@ -74,7 +84,14 @@ def transcribe(
         )
 
     try:
-        result = transcribe_main.transcribe(video_path, output, language, final_vocab)
+        result = transcribe_main.transcribe(
+            video_path,
+            output,
+            language,
+            final_vocab,
+            start_time=start,
+            end_time=end,
+        )
         logger.info(f"Success! Saved {len(result.words)} words to {output}")
     except Exception as e:
         logger.error(f"Error during transcription: {e}")
@@ -309,6 +326,16 @@ def run(
         "--extract-keyframes/--no-extract-keyframes",
         help="Automatically extract keyframes when optional external tooling is installed.",
     ),
+    start: str = typer.Option(
+        None,
+        "--start",
+        help="Start time for transcription (e.g. 00:01:00 or 60).",
+    ),
+    end: str = typer.Option(
+        None,
+        "--end",
+        help="End time for transcription (e.g. 00:04:00 or 240).",
+    ),
 ):
     """
     Runs the end-to-end Japanese pipeline (Transcribe -> Format -> Translate -> Postprocess).
@@ -365,7 +392,14 @@ def run(
     # Step 1: Transcribe
     try:
         logger.info("[Step 1/4] Transcribing...")
-        transcribe_main.transcribe(video_path, transcript_out, language, final_vocab)
+        transcribe_main.transcribe(
+            video_path,
+            transcript_out,
+            language,
+            final_vocab,
+            start_time=start,
+            end_time=end,
+        )
     except Exception as e:
         logger.error(f"Failed during transcription: {e}")
         raise typer.Exit(code=1)
