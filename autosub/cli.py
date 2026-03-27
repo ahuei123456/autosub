@@ -558,6 +558,13 @@ def translate(
         if glossary_text:
             final_prompt_parts.append(glossary_text)
 
+        if profile_data.get("corners"):
+            corners_text = "Recurring corners/segments (use cue phrases to identify transitions):\n"
+            for corner in profile_data["corners"]:
+                corners_text += f'- {corner["name"]}: {corner["description"]}\n'
+                corners_text += f'  Cue phrases: {", ".join(corner.get("cues", []))}\n'
+            final_prompt_parts.append(corners_text)
+
     if prompt:
         final_prompt_parts.append(prompt)
 
@@ -886,6 +893,13 @@ def run(
         glossary_text = _build_glossary_prompt(translate_profile.get("glossary", {}))
         if glossary_text:
             final_prompt_parts.append(glossary_text)
+
+        if profile_data.get("corners"):
+            corners_text = "Recurring corners/segments (use cue phrases to identify transitions):\n"
+            for corner in profile_data["corners"]:
+                corners_text += f'- {corner["name"]}: {corner["description"]}\n'
+                corners_text += f'  Cue phrases: {", ".join(corner.get("cues", []))}\n'
+            final_prompt_parts.append(corners_text)
 
     if vocab:
         final_vocab.extend(vocab)

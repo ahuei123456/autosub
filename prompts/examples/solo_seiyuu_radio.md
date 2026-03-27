@@ -15,6 +15,7 @@ Core translation guidelines:
 12. If the host corrects herself, restarts a sentence, or speaks hesitantly, render it in natural spoken English, but do not add ellipses unless the transcript itself clearly shows an unfinished thought. When a thought simply continues into the next subtitle, prefer a comma or clean continuation instead.
 13. When a joke or anecdote depends on phrasing, preserve the punchline or emotional beat even if sentence structure must change.
 14. Assume the audience is familiar with anime, seiyuu, radio-show, and idol-fandom context. Translate clearly, but do not over-explain common fan culture references inside the subtitle itself.
+15. Radio shows follow a recurring structure with distinct corners/segments. When you recognize a cue phrase that signals a corner transition, adjust your translation tone and context accordingly.
 
 Style constraints:
 1. Use spoken English, not formal written English.

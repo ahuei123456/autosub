@@ -62,6 +62,7 @@ def _empty_stage_profile() -> dict[str, dict]:
     }
 
 
+
 def _merge_stage_section(
     base: dict, override: dict, *, append_list_keys: tuple[str, ...] = ()
 ) -> dict:
@@ -271,6 +272,12 @@ def _normalize_profile_data(profile_name: str, data: dict) -> dict[str, dict]:
                 f"'replacements' in {profile_name} must be a TOML table/dict."
             )
 
+    if "corners" in data:
+        if isinstance(data["corners"], list):
+            normalized["corners"] = data["corners"]
+        else:
+            logger.warning(f"'corners' in {profile_name} must be an array of tables.")
+
     return normalized
 
 
@@ -304,7 +311,15 @@ def _load_profile_sections(
         base_data = _load_profile_sections(base_profile, visited)
         combined = _merge_profiles(combined, base_data)
 
-    return _merge_profiles(combined, _normalize_profile_data(profile_name, data))
+    merged = _merge_profiles(combined, _normalize_profile_data(profile_name, data))
+
+    # Corners are top-level, not stage-specific — accumulate from bases and own data
+    base_corners = combined.get("corners", [])
+    own_corners = _normalize_profile_data(profile_name, data).get("corners", [])
+    if base_corners or own_corners:
+        merged["corners"] = [*base_corners, *own_corners]
+
+    return merged
 
 
 def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> dict:
@@ -333,4 +348,5 @@ def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> 
         "extensions": legacy_extensions,
         "glossary": copy.deepcopy(translate_stage.get("glossary", {})),
         "replacements": copy.deepcopy(format_stage.get("replacements", {})),
+        "corners": staged.get("corners", []),
     }
