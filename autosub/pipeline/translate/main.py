@@ -45,6 +45,7 @@ def translate_subtitles(
     reasoning_budget_tokens: int | None = None,
     reasoning_dynamic: bool | None = None,
     chunk_size: int = 0,
+    corner_names: list[str] | None = None,
     retry_chunks: list[int] | None = None,
     log_dir: Path | None = None,
 ) -> None:
@@ -65,6 +66,7 @@ def translate_subtitles(
         reasoning_budget_tokens: Optional token-budget override for LLM reasoning.
         reasoning_dynamic: Whether to request dynamic reasoning budget when supported.
         chunk_size: If > 0, split into chunks of this size.
+        corner_names: Valid corner names from the profile. If set, only these are accepted as markers.
     """
     logger.info(f"Loading '{input_ass_path}' for translation...")
 
@@ -175,7 +177,9 @@ def translate_subtitles(
 
     # Walk all events in order, preserving non-translated events (e.g. Comments)
     # in place while applying translations and inserting corner markers.
+    valid_corners = set(corner_names) if corner_names else None
     corners_found: list[str] = []
+    last_corner: str | None = None
     event_idx = 0
     for event in script.events:
         if id(event) not in translated_event_set:
@@ -192,18 +196,28 @@ def translate_subtitles(
         corner_match = corner_marker_re.match(translated_text)
         if corner_match:
             corner_name = corner_match.group(1)
+            # Always strip the marker tag from the translated text
             translated_text = translated_text[corner_match.end():]
-            comment = pyass.Event(
-                format=pyass.EventFormat.COMMENT,
-                start=event.start,
-                end=event.end,
-                style=event.style,
-                effect="corner",
-                text=f"=== Corner: {corner_name} ===",
-            )
-            new_events.append(comment)
-            corners_found.append(corner_name)
-            logger.info(f"  Corner detected at line {event_idx}: {corner_name}")
+
+            # Skip if not a profile-defined corner
+            if valid_corners and corner_name not in valid_corners:
+                logger.debug(f"  Ignoring unknown corner at line {event_idx}: {corner_name}")
+            # Skip consecutive duplicate (e.g. chunk boundary re-detection)
+            elif corner_name == last_corner:
+                logger.debug(f"  Skipping duplicate corner at line {event_idx}: {corner_name}")
+            else:
+                comment = pyass.Event(
+                    format=pyass.EventFormat.COMMENT,
+                    start=event.start,
+                    end=event.end,
+                    style=event.style,
+                    effect="corner",
+                    text=f"=== Corner: {corner_name} ===",
+                )
+                new_events.append(comment)
+                corners_found.append(corner_name)
+                last_corner = corner_name
+                logger.info(f"  Corner detected at line {event_idx}: {corner_name}")
 
         # Update the event with the new text
         if bilingual:
