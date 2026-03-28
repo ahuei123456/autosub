@@ -745,6 +745,154 @@ def postprocess(
         raise typer.Exit(code=1)
 
 
+@app.command(name="review-speakers")
+def review_speakers(
+    transcript: Path = typer.Argument(
+        ...,
+        help="Path to the transcript JSON file from the transcribe step.",
+        exists=True,
+        dir_okay=False,
+    ),
+    speaker_map_path: Path = typer.Option(
+        ...,
+        "--speaker-map",
+        help="Path to speaker_map.toml with the real speaker identities.",
+        exists=True,
+        dir_okay=False,
+    ),
+    sample_lines: int = typer.Option(
+        3,
+        "--sample-lines",
+        help="Number of sample lines to show per speaker label.",
+    ),
+):
+    """
+    Review diarized speaker labels and interactively map them to real speakers.
+
+    Shows sample transcript lines per speaker label, then prompts you to assign
+    each label to a speaker from the speaker map. Writes updated mappings back
+    to the speaker map file.
+    """
+    import json
+    import tomllib
+
+    from autosub.core.schemas import TranscriptionResult
+    from autosub.core.speaker_map import load_speaker_map
+
+    # Load transcript
+    with open(transcript, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    result = TranscriptionResult(**data)
+
+    if not result.words:
+        logger.error("Transcript has no words.")
+        raise typer.Exit(code=1)
+
+    # Group words by speaker label
+    speaker_words: dict[str, list] = {}
+    for w in result.words:
+        label = w.speaker or "unknown"
+        if label not in speaker_words:
+            speaker_words[label] = []
+        speaker_words[label].append(w)
+
+    if len(speaker_words) <= 1:
+        logger.info("Only one speaker label found — no mapping needed.")
+        raise typer.Exit()
+
+    # Load existing speaker map to get the real speaker identities
+    existing_map = load_speaker_map(speaker_map_path)
+
+    # Collect the unique real speakers (deduplicate by name)
+    real_speakers: list[dict] = []
+    seen_names: set[str] = set()
+    for entry in existing_map.values():
+        if entry["name"] not in seen_names:
+            real_speakers.append(entry)
+            seen_names.add(entry["name"])
+
+    if not real_speakers:
+        logger.error("Speaker map has no speaker entries.")
+        raise typer.Exit(code=1)
+
+    # Phase 1: Display samples per label
+    sorted_labels = sorted(speaker_words.keys(), key=lambda x: (not x.isdigit(), x))
+    typer.echo("\n=== Speaker Labels in Transcript ===\n")
+
+    for label in sorted_labels:
+        words = speaker_words[label]
+        word_count = len(words)
+
+        # Pick sample positions spread across the timeline
+        if len(words) <= sample_lines * 10:
+            indices = [0]
+        else:
+            step = len(words) // sample_lines
+            indices = [i * step for i in range(sample_lines)]
+
+        typer.echo(f"Speaker {label} ({word_count} words):")
+        for idx in indices:
+            # Build a snippet from consecutive words at this position
+            snippet_words = words[idx:idx + 10]
+            t = snippet_words[0].start_time
+            mins = int(t // 60)
+            secs = t % 60
+            text = "".join(w.word for w in snippet_words)
+            if len(text) > 50:
+                text = text[:47] + "..."
+            typer.echo(f"  [{mins:02d}:{secs:04.1f}] {text}")
+        typer.echo()
+
+    # Phase 2: Interactive mapping
+    typer.echo("=== Known Speakers ===\n")
+    for i, sp in enumerate(real_speakers, 1):
+        char = f" ({sp['character']})" if sp.get("character") else ""
+        typer.echo(f"  {i}. {sp['name']}{char}")
+    typer.echo()
+
+    assignments: dict[str, dict] = {}
+    for label in sorted_labels:
+        while True:
+            choice = typer.prompt(
+                f"Assign label \"{label}\" → [1-{len(real_speakers)}/skip]",
+                default="skip",
+            )
+            if choice.lower() == "skip":
+                break
+            try:
+                idx = int(choice)
+                if 1 <= idx <= len(real_speakers):
+                    assignments[label] = real_speakers[idx - 1]
+                    typer.echo(f"  → {real_speakers[idx - 1]['name']}")
+                    break
+                else:
+                    typer.echo(f"  Enter 1-{len(real_speakers)} or 'skip'")
+            except ValueError:
+                typer.echo(f"  Enter 1-{len(real_speakers)} or 'skip'")
+
+    if not assignments:
+        typer.echo("\nNo assignments made. Speaker map unchanged.")
+        raise typer.Exit()
+
+    # Phase 3: Write updated speaker map
+    # Build new speakers dict with all assigned labels
+    new_speakers_lines = ["# Speaker map (updated by review-speakers)\n"]
+    for label, entry in sorted(assignments.items(), key=lambda x: x[0]):
+        new_speakers_lines.append(f'[speakers."{label}"]')
+        new_speakers_lines.append(f'name = "{entry["name"]}"')
+        if entry.get("character"):
+            new_speakers_lines.append(f'character = "{entry["character"]}"')
+        if entry.get("color"):
+            new_speakers_lines.append(f'color = "{entry["color"]}"')
+        new_speakers_lines.append("")
+
+    new_content = "\n".join(new_speakers_lines)
+    with open(speaker_map_path, "w", encoding="utf-8") as f:
+        f.write(new_content)
+
+    typer.echo(f"\nUpdated {speaker_map_path} with {len(assignments)} speaker mappings.")
+
+
 @app.command()
 def run(
     ctx: typer.Context,
@@ -1042,6 +1190,15 @@ def run(
     except Exception as e:
         logger.exception("Failed during transcription (%s)", _exception_summary(e))
         raise typer.Exit(code=1)
+
+    if speakers and result:
+        unique_speakers = {w.speaker for w in result.words if w.speaker}
+        if len(unique_speakers) > speakers:
+            logger.warning(
+                f"Requested {speakers} speakers but transcription returned "
+                f"{len(unique_speakers)} labels: {sorted(unique_speakers)}. "
+                f"Run 'autosub review-speakers {transcript_out} --speaker-map <map>' to review."
+            )
 
     # Step 1.5: Keyframes
     kf_ms = None
