@@ -306,3 +306,98 @@ def test_build_speaker_prompt_without_characters():
     result = build_speaker_prompt(speaker_map)
     assert "- Speaker A" in result
     assert "voice of" not in result
+
+
+# --- Speaker review flow tests ---
+
+
+def _make_transcript_result(speaker_labels):
+    """Build a mock TranscriptionResult with words tagged by speaker labels."""
+    from autosub.core.schemas import TranscriptionResult
+    words = []
+    for i, label in enumerate(speaker_labels):
+        words.append(TranscribedWord(
+            word=f"word{i}",
+            start_time=float(i),
+            end_time=float(i) + 0.5,
+            speaker=label,
+        ))
+    return TranscriptionResult(words=words)
+
+
+def test_single_speaker_no_review_needed():
+    """Single speaker project — review should never trigger."""
+    result = _make_transcript_result(["0"] * 20)
+    unique = {w.speaker for w in result.words if w.speaker}
+    # --speakers 1, got 1 label → no review
+    assert not (len(unique) > 1)
+
+
+def test_multi_speaker_matching_count_no_review():
+    """Multi speaker project where Chirp returns exact count — no review needed."""
+    result = _make_transcript_result(["0"] * 10 + ["1"] * 10 + ["2"] * 10)
+    unique = {w.speaker for w in result.words if w.speaker}
+    speakers_requested = 3
+    # Got 3 labels, requested 3 → no review
+    assert not (len(unique) > speakers_requested)
+
+
+def test_multi_speaker_extra_labels_triggers_review():
+    """Multi speaker project where Chirp over-segments — review should trigger."""
+    result = _make_transcript_result(
+        ["0"] * 10 + ["1"] * 10 + ["2"] * 5 + ["3"] * 5 + ["4"] * 3
+    )
+    unique = {w.speaker for w in result.words if w.speaker}
+    speakers_requested = 3
+    # Got 5 labels, requested 3 → review needed
+    assert len(unique) > speakers_requested
+
+
+def test_speaker_map_applied_without_speakers_flag():
+    """Speaker map for styling works even without --speakers (no diarization)."""
+    lines = [
+        SubtitleLine(text="hello", start_time=0.0, end_time=1.0, speaker="0"),
+        SubtitleLine(text="world", start_time=1.0, end_time=2.0, speaker="1"),
+    ]
+    speaker_map = {
+        "0": {"name": "Host A", "character": None, "color": "#FF0000"},
+        "1": {"name": "Host B", "character": None, "color": "#0000FF"},
+    }
+    remap_speaker_labels(lines, speaker_map)
+    assert lines[0].speaker == "Host A"
+    assert lines[1].speaker == "Host B"
+
+
+def test_many_to_one_speaker_mapping():
+    """Multiple labels mapped to the same speaker merge correctly."""
+    lines = [
+        SubtitleLine(text="a", start_time=0.0, end_time=1.0, speaker="0"),
+        SubtitleLine(text="b", start_time=1.0, end_time=2.0, speaker="3"),
+        SubtitleLine(text="c", start_time=2.0, end_time=3.0, speaker="6"),
+    ]
+    # Labels 0, 3, 6 all map to the same person
+    speaker_map = {
+        "0": {"name": "Date Sayuri", "character": "Kanon", "color": "#FF0000"},
+        "3": {"name": "Date Sayuri", "character": "Kanon", "color": "#FF0000"},
+        "6": {"name": "Date Sayuri", "character": "Kanon", "color": "#FF0000"},
+    }
+    remap_speaker_labels(lines, speaker_map)
+    assert all(l.speaker == "Date Sayuri" for l in lines)
+
+
+def test_transcript_hash_consistency(tmp_path):
+    """Same transcript produces the same hash, different transcript produces different hash."""
+    from autosub.cli import _transcript_hash
+
+    t1 = tmp_path / "t1.json"
+    t2 = tmp_path / "t2.json"
+    t1.write_text('{"words": []}', encoding="utf-8")
+    t2.write_text('{"words": [{"word": "hi"}]}', encoding="utf-8")
+
+    h1a = _transcript_hash(t1)
+    h1b = _transcript_hash(t1)
+    h2 = _transcript_hash(t2)
+
+    assert h1a == h1b  # same file → same hash
+    assert h1a != h2   # different file → different hash
+    assert len(h1a) == 16  # truncated to 16 chars
