@@ -60,6 +60,7 @@ class BaseVertexLLM:
                     response_mime_type="application/json",
                     response_schema=response_schema,
                     temperature=self.temperature,
+                    thinking_config=types.ThinkingConfig(thinking_budget=8192),
                 ),
             )
         except Exception as exc:
