@@ -281,6 +281,7 @@ def format_subtitles(
     extensions_config: dict | None = None,
     normalizer_config: dict | None = None,
     replacements: dict[str, str] | None = None,
+    speaker_map: dict[str, dict] | None = None,
 ) -> None:
     """
     Reads a transcript.json file, chunks the transcribed words into semantic lines,
@@ -395,7 +396,7 @@ def format_subtitles(
     )
 
     logger.info(f"Writing .ass file to {output_ass_path}...")
-    generator.generate_ass_file(lines, output_ass_path)
+    generator.generate_ass_file(lines, output_ass_path, speaker_map=speaker_map)
     trace_paths = [
         _stage_trace_path(output_ass_path, name)
         for name in ("normalizer", "radio_discourse", "corners", "combined")

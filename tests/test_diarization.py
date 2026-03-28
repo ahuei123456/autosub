@@ -1,4 +1,7 @@
-from autosub.core.schemas import TranscribedWord
+import pyass
+
+from autosub.core.schemas import SubtitleLine, TranscribedWord
+from autosub.core.speaker_map import hex_to_pyass_color, load_speaker_map, remap_speaker_labels
 from autosub.pipeline.format.chunker import chunk_words_to_lines
 from autosub.core.profile import load_unified_profile
 
@@ -198,3 +201,86 @@ def test_local_prompt_overrides_example_prompt(tmp_path):
         assert data["prompt"] == ["local guidance"]
     finally:
         autosub.core.profile.Path = original_path
+
+
+# --- Speaker map tests ---
+
+
+def test_load_speaker_map(tmp_path):
+    yaml_content = """\
+speakers:
+  "1":
+    name: "Mizuki Akiyama"
+    color: "#FFFF00"
+  "2":
+    name: "Ena Shinonome"
+    color: "#FF8080"
+"""
+    map_file = tmp_path / "speaker_map.yaml"
+    map_file.write_text(yaml_content, encoding="utf-8")
+
+    result = load_speaker_map(map_file)
+    assert result == {
+        "1": {"name": "Mizuki Akiyama", "color": "#FFFF00"},
+        "2": {"name": "Ena Shinonome", "color": "#FF8080"},
+    }
+
+
+def test_load_speaker_map_missing_color(tmp_path):
+    yaml_content = """\
+speakers:
+  "1":
+    name: "Speaker One"
+"""
+    map_file = tmp_path / "speaker_map.yaml"
+    map_file.write_text(yaml_content, encoding="utf-8")
+
+    result = load_speaker_map(map_file)
+    assert result["1"]["name"] == "Speaker One"
+    assert result["1"]["color"] is None
+
+
+def test_load_speaker_map_fallback_name(tmp_path):
+    yaml_content = """\
+speakers:
+  "3":
+    color: "#00FF00"
+"""
+    map_file = tmp_path / "speaker_map.yaml"
+    map_file.write_text(yaml_content, encoding="utf-8")
+
+    result = load_speaker_map(map_file)
+    assert result["3"]["name"] == "3"
+
+
+def test_remap_speaker_labels():
+    lines = [
+        SubtitleLine(text="hello", start_time=0.0, end_time=1.0, speaker="1"),
+        SubtitleLine(text="world", start_time=1.0, end_time=2.0, speaker="2"),
+        SubtitleLine(text="test", start_time=2.0, end_time=3.0, speaker=None),
+    ]
+    speaker_map = {
+        "1": {"name": "Mizuki", "color": "#FFFF00"},
+        "2": {"name": "Ena", "color": "#FF8080"},
+    }
+
+    remap_speaker_labels(lines, speaker_map)
+
+    assert lines[0].speaker == "Mizuki"
+    assert lines[1].speaker == "Ena"
+    assert lines[2].speaker is None  # unchanged
+
+
+def test_hex_to_pyass_color():
+    c = hex_to_pyass_color("#FF8040")
+    assert c.r == 255
+    assert c.g == 128
+    assert c.b == 64
+    assert c.a == 0
+
+
+def test_hex_to_pyass_color_no_hash():
+    c = hex_to_pyass_color("00FF00")
+    assert c.r == 0
+    assert c.g == 255
+    assert c.b == 0
