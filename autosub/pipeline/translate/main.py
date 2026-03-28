@@ -204,7 +204,7 @@ def translate_subtitles(
                 start=event.start,
                 end=event.end,
                 style=event.style,
-                effect="chunk_debug",
+                effect="",
                 text="[autosub] Chunk boundary — review translation around this line",
             )
             new_events.append(debug_comment)
