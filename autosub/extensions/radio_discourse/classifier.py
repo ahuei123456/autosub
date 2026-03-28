@@ -5,10 +5,10 @@ import logging
 from collections import Counter
 from typing import Iterable, Literal
 
-from google import genai
-from google.genai import types
 from pydantic import BaseModel
 
+from autosub.core.errors import VertexResponseShapeError
+from autosub.core.llm import BaseVertexLLM
 from autosub.core.schemas import SubtitleLine
 
 logger = logging.getLogger(__name__)
@@ -21,16 +21,21 @@ class RadioDiscourseDecision(BaseModel):
     role: Literal["host", "listener_mail", "host_meta"]
 
 
-class VertexRadioDiscourseClassifier:
+class VertexRadioDiscourseClassifier(BaseVertexLLM):
     def __init__(
         self,
+        *,
         project_id: str,
         model: str = "gemini-3.1-flash-lite-preview",
         location: str = "global",
+        temperature: float = 0.1,
     ):
-        self.project_id = project_id
-        self.model = model
-        self.location = location
+        super().__init__(
+            project_id=project_id,
+            model=model,
+            location=location,
+            temperature=temperature,
+        )
 
     def _get_system_instruction(self, num_lines: int) -> str:
         return (
@@ -61,9 +66,6 @@ class VertexRadioDiscourseClassifier:
         if not lines:
             return {}
 
-        client = genai.Client(
-            vertexai=True, project=self.project_id, location=self.location
-        )
         system_instruction = self._get_system_instruction(len(lines))
         payload = [
             {
@@ -74,31 +76,25 @@ class VertexRadioDiscourseClassifier:
         ]
         contents = json.dumps(payload, ensure_ascii=False, indent=2)
 
-        response = client.models.generate_content(
-            model=self.model,
+        response_json, diagnostics = self._generate_structured_json(
             contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                response_mime_type="application/json",
-                response_schema=list[RadioDiscourseDecision],
-                temperature=0.1,
-            ),
+            system_instruction=system_instruction,
+            response_schema=list[RadioDiscourseDecision],
+            operation_name="Vertex radio discourse classifier",
         )
 
-        if not response.text:
-            raise ValueError(
-                "Vertex radio discourse classifier returned an empty response."
-            )
-
         try:
-            response_json = json.loads(response.text)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM response: {e}")
-            logger.error(f"Raw Response: {response.text}")
-            raise e
-
-        response_json.sort(key=lambda item: item["id"])
-        return {item["id"]: item["role"] for item in response_json}
+            response_json.sort(key=lambda item: item["id"])
+            return {item["id"]: item["role"] for item in response_json}
+        except Exception as exc:
+            raise VertexResponseShapeError(
+                "Vertex radio discourse classifier returned JSON with an unexpected structure: "
+                f"{exc}",
+                diagnostics=diagnostics,
+                project_id=self.project_id,
+                model=self.model,
+                location=self.location,
+            ) from exc
 
 
 def classify_roles_with_vertex(

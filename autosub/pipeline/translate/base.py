@@ -1,15 +1,17 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 
 class BaseTranslator(ABC):
     def __init__(
         self,
-        project_id: str,
+        *,
         target_lang: str = "en",
         source_lang: str = "ja",
         system_prompt: str | None = None,
+        **kwargs: Any,
     ):
-        self.project_id = project_id
+        super().__init__(**kwargs)
         self.target_lang = target_lang
         self.source_lang = source_lang
         self.system_prompt = system_prompt

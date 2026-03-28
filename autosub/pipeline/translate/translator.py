@@ -1,9 +1,9 @@
 import logging
 import json
 from pydantic import BaseModel
-from google import genai
-from google.genai import types
 
+from autosub.core.errors import VertexResponseShapeError
+from autosub.core.llm import BaseVertexLLM
 from autosub.pipeline.translate.base import BaseTranslator
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,28 @@ class TranslatedSubtitle(BaseModel):
     translated: str
 
 
-class VertexTranslator(BaseTranslator):
+class VertexTranslator(BaseTranslator, BaseVertexLLM):
+    def __init__(
+        self,
+        *,
+        project_id: str,
+        target_lang: str = "en",
+        source_lang: str = "ja",
+        system_prompt: str | None = None,
+        model: str = "gemini-3-flash-preview",
+        location: str = "global",
+        temperature: float = 0.1,
+    ):
+        super().__init__(
+            project_id=project_id,
+            target_lang=target_lang,
+            source_lang=source_lang,
+            system_prompt=system_prompt,
+            model=model,
+            location=location,
+            temperature=temperature,
+        )
+
     def _get_system_instruction(self, num_lines: int) -> str:
         instruction = (
             f"You are a professional subtitle translator and localizer.\n"
@@ -49,35 +70,24 @@ class VertexTranslator(BaseTranslator):
             return []
 
         logger.info(
-            f"Translating {len(texts)} subtitle shards using Vertex AI (Gemini Flash)..."
+            "Translating %s subtitle shards using Vertex AI model '%s' in '%s'...",
+            len(texts),
+            self.model,
+            self.location,
         )
-
-        # Initialize the Vertex AI client using Application Default Credentials
-        client = genai.Client(vertexai=True, project=self.project_id, location="global")
 
         system_instruction = self._get_system_instruction(len(texts))
         payload = [{"id": i, "text": t} for i, t in enumerate(texts)]
         contents = json.dumps(payload, ensure_ascii=False, indent=2)
 
-        # Use Gemini 3 Flash with structured output schema
-        response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+        response_json, diagnostics = self._generate_structured_json(
             contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                response_mime_type="application/json",
-                response_schema=list[TranslatedSubtitle],
-                temperature=0.1,  # Low temperature to avoid hallucination inside JSON
-            ),
+            system_instruction=system_instruction,
+            response_schema=list[TranslatedSubtitle],
+            operation_name="Vertex translator",
         )
 
         try:
-            # Parse the structured JSON response
-            if not response.text:
-                raise ValueError("LLM returned an empty response string.")
-
-            response_json = json.loads(response.text)
-
             # Sort by id to guarantee ordering
             response_json.sort(key=lambda x: x["id"])
 
@@ -90,7 +100,11 @@ class VertexTranslator(BaseTranslator):
 
             return translated_texts
 
-        except Exception as e:
-            logger.error(f"Failed to parse LLM response: {e}")
-            logger.error(f"Raw Response: {response.text}")
-            raise e
+        except Exception as exc:
+            raise VertexResponseShapeError(
+                f"Vertex translator returned JSON with an unexpected structure: {exc}",
+                diagnostics=diagnostics,
+                project_id=self.project_id,
+                model=self.model,
+                location=self.location,
+            ) from exc

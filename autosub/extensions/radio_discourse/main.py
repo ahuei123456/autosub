@@ -4,8 +4,9 @@ import logging
 import re
 
 from autosub.core.config import PROJECT_ID
+from autosub.core.errors import VertexError
 from autosub.core.schemas import SubtitleLine
-from autosub.extensions.radio_discourse.vertex import classify_roles_with_vertex
+from autosub.extensions.radio_discourse.classifier import classify_roles_with_vertex
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ def apply_radio_discourse(
                 fallback_roles,
                 vertex_config,
             )
-        except Exception:
+        except VertexError:
             if engine == "vertex":
                 raise
             logger.warning(

@@ -191,6 +191,16 @@ def translate(
     ),
     target_lang: str = typer.Option("en", "--target", help="Target language code."),
     source_lang: str = typer.Option("ja", "--source", help="Source language code."),
+    vertex_model: str = typer.Option(
+        "gemini-3-flash-preview",
+        "--vertex-model",
+        help="Vertex model name for LLM translation.",
+    ),
+    vertex_location: str = typer.Option(
+        "global",
+        "--vertex-location",
+        help="Vertex region for LLM translation.",
+    ),
     bilingual: bool = typer.Option(
         False,
         "--bilingual/--replace",
@@ -228,6 +238,8 @@ def translate(
             target_lang=target_lang,
             source_lang=source_lang,
             bilingual=bilingual,
+            model=vertex_model,
+            location=vertex_location,
         )
     except Exception as e:
         logger.error(f"Error during translation: {e}")
@@ -307,6 +319,16 @@ def run(
     ),
     target_lang: str = typer.Option("en", "--target", help="Target language code."),
     source_lang: str = typer.Option("ja", "--source", help="Source language code."),
+    vertex_model: str = typer.Option(
+        "gemini-3-flash-preview",
+        "--vertex-model",
+        help="Vertex model name for LLM translation.",
+    ),
+    vertex_location: str = typer.Option(
+        "global",
+        "--vertex-location",
+        help="Vertex region for LLM translation.",
+    ),
     bilingual: bool = typer.Option(
         False, "--bilingual/--replace", help="Include original text on top."
     ),
@@ -465,6 +487,8 @@ def run(
             target_lang=target_lang,
             source_lang=source_lang,
             bilingual=bilingual,
+            model=vertex_model,
+            location=vertex_location,
         )
     except Exception as e:
         logger.error(f"Failed during translation: {e}")

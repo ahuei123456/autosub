@@ -7,6 +7,21 @@ logger = logging.getLogger(__name__)
 
 
 class CloudTranslationTranslator(BaseTranslator):
+    def __init__(
+        self,
+        *,
+        project_id: str,
+        target_lang: str = "en",
+        source_lang: str = "ja",
+        system_prompt: str | None = None,
+    ):
+        super().__init__(
+            target_lang=target_lang,
+            source_lang=source_lang,
+            system_prompt=system_prompt,
+        )
+        self.project_id = project_id
+
     def translate(self, texts: list[str]) -> list[str]:
         if not texts:
             return []

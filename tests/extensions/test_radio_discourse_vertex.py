@@ -1,6 +1,7 @@
+from autosub.core.errors import VertexRequestError
 from autosub.core.schemas import SubtitleLine
 from autosub.extensions.radio_discourse.main import apply_radio_discourse
-from autosub.extensions.radio_discourse.vertex import (
+from autosub.extensions.radio_discourse.classifier import (
     VertexRadioDiscourseClassifier,
     _build_windows_for_config,
 )
@@ -69,7 +70,7 @@ def test_apply_radio_discourse_hybrid_falls_back_to_rules_on_vertex_failure(
     ]
 
     def fake_classify(processed_lines, fallback_roles, config):
-        raise RuntimeError("simulated vertex failure")
+        raise VertexRequestError("simulated vertex failure")
 
     monkeypatch.setattr(
         "autosub.extensions.radio_discourse.main.classify_roles_with_vertex",

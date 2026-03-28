@@ -15,6 +15,8 @@ def translate_subtitles(
     target_lang: str = "en",
     source_lang: str = "ja",
     bilingual: bool = True,
+    model: str = "gemini-3-flash-preview",
+    location: str = "global",
 ) -> None:
     """
     Reads an original .ass file, translates the dialogue events, and outputs a new .ass file.
@@ -27,6 +29,8 @@ def translate_subtitles(
         target_lang: Language code to translate to.
         source_lang: Original language code.
         bilingual: If True, keep the original text above the translated text. If False, replace completely.
+        model: Vertex model name for LLM translation.
+        location: Vertex region for LLM translation.
     """
     logger.info(f"Loading '{input_ass_path}' for translation...")
 
@@ -58,13 +62,15 @@ def translate_subtitles(
         raise ValueError("AUTOSUB_PROJECT_ID is not set in the environment.")
 
     if engine == "vertex":
-        from autosub.pipeline.translate.vertex import VertexTranslator
+        from autosub.pipeline.translate.translator import VertexTranslator
 
         translator = VertexTranslator(
             project_id=PROJECT_ID,
             target_lang=target_lang,
             source_lang=source_lang,
             system_prompt=system_prompt,
+            model=model,
+            location=location,
         )
     elif engine == "cloud-v3":
         from autosub.pipeline.translate.api import CloudTranslationTranslator
