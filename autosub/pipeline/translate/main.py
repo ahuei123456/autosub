@@ -48,6 +48,7 @@ def translate_subtitles(
     chunk_size: int = 0,
     corner_names: list[str] | None = None,
     corner_cues: list[str] | None = None,
+    debug: bool = False,
     retry_chunks: list[int] | None = None,
     log_dir: Path | None = None,
 ) -> None:
@@ -147,9 +148,10 @@ def translate_subtitles(
         error_path.unlink()
         logger.info("Removed previous translation error file.")
 
+    splits: set[int] = set()
     try:
         if chunk_size > 0:
-            translated_texts = _translate_chunked(
+            translated_texts, splits = _translate_chunked(
                 translator, texts_to_translate, chunk_size, checkpoint_path,
                 corner_cues=corner_cues,
                 retry_chunks=retry_chunks,
@@ -194,6 +196,19 @@ def translate_subtitles(
         # Match this event to its translation by index
         original_text = texts_to_translate[event_idx]
         translated_text = translated_texts[event_idx]
+
+        # Insert debug comment at artificial chunk boundaries
+        if debug and event_idx in splits:
+            debug_comment = pyass.Event(
+                format=pyass.EventFormat.COMMENT,
+                start=event.start,
+                end=event.end,
+                style=event.style,
+                effect="chunk_debug",
+                text="=== Chunk boundary (review translation) ===",
+            )
+            new_events.append(debug_comment)
+
         event_idx += 1
 
         # Check for corner marker in translation
@@ -345,9 +360,9 @@ def _translate_chunked(
     corner_cues: list[str] | None = None,
     retry_chunks: list[int] | None = None,
     log_dir: Path | None = None,
-) -> list[str]:
+) -> tuple[list[str], set[int]]:
     """Split texts into chunks, translate each once, and merge results."""
-    chunks = make_chunks(texts, chunk_size, corner_cues=corner_cues)
+    chunks, splits = make_chunks(texts, chunk_size, corner_cues=corner_cues)
     fingerprint = _compute_fingerprint(texts, chunk_size, corner_cues)
 
     # Set up structured log directory
@@ -451,4 +466,4 @@ def _translate_chunked(
     for chunk_idx in range(len(chunks)):
         all_translated.extend(completed[chunk_idx])
 
-    return all_translated
+    return all_translated, splits

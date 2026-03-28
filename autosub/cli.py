@@ -487,6 +487,11 @@ def translate(
         min=0,
         help="Number of subtitle lines per chunk. Use 0 to disable chunking.",
     ),
+    debug: bool = typer.Option(
+        False,
+        "--debug/--no-debug",
+        help="Insert debug comments at artificial chunk boundaries for review.",
+    ),
     save_log: bool = typer.Option(
         False,
         "--save-log/--no-save-log",
@@ -622,6 +627,7 @@ def translate(
             chunk_size=chunk_size,
             corner_names=final_corner_names or None,
             corner_cues=final_corner_cues or None,
+            debug=debug,
             retry_chunks=retry_chunk or None,
             log_dir=translate_log_dir,
         )
@@ -796,6 +802,11 @@ def run(
         "--chunk-size",
         min=0,
         help="Number of subtitle lines per chunk. Use 0 to disable chunking.",
+    ),
+    debug: bool = typer.Option(
+        False,
+        "--debug/--no-debug",
+        help="Insert debug comments at artificial chunk boundaries for review.",
     ),
     save_log: bool = typer.Option(
         False,
@@ -1036,6 +1047,7 @@ def run(
             chunk_size=chunk_size,
             corner_names=final_corner_names or None,
             corner_cues=final_corner_cues or None,
+            debug=debug,
             retry_chunks=retry_chunk or None,
             log_dir=translate_log_dir,
         )
