@@ -942,6 +942,7 @@ def run(
             whisper_batch_size=whisper_batch_size,
             whisper_diarize=whisper_diarize,
             whisper_hf_token=whisper_hf_token,
+            replacements=replacements or None,
         )
     except Exception as e:
         logger.exception("Failed during transcription (%s)", _exception_summary(e))
