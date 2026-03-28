@@ -230,7 +230,7 @@ def translate_subtitles(
                     start=event.start,
                     end=event.end,
                     style=event.style,
-                    effect="corner",
+                    effect="",
                     text=f"=== Corner: {corner_name} ===",
                 )
                 new_events.append(comment)
