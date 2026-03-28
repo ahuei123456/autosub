@@ -1356,6 +1356,11 @@ def run(
         logger.error(f"Failed during postprocessing: {e}")
         raise typer.Exit(code=1)
 
+    # Link video in ASS files for Aegisub
+    from autosub.pipeline.format.generator import inject_aegisub_metadata
+    inject_aegisub_metadata(original_ass_out, video_path)
+    inject_aegisub_metadata(translated_ass_out, video_path)
+
     logger.info(
         f"Pipeline completed successfully! Final output saved to {translated_ass_out}"
     )
