@@ -578,7 +578,12 @@ def translate(
                 "\nWhen you detect a transition to a new corner/segment, "
                 "prepend [CORNER: <corner name>] to the FIRST translated line of that segment. "
                 "Only mark the transition once per segment, not every line. "
-                "Example: [CORNER: Card Illustrations] Let's take a look at the card illustrations."
+                "Example: [CORNER: Card Illustrations] Let's take a look at the card illustrations.\n\n"
+                "IMPORTANT: Do NOT mark a corner just because a cue phrase appears in passing. "
+                "The host may mention a segment topic briefly (e.g. previewing what's coming up later) "
+                "without actually transitioning to that segment. Only mark a corner when the overall "
+                "topic genuinely changes and the conversation shifts to that segment's content. "
+                "Look at the surrounding context, not just a single line."
             )
             final_prompt_parts.append(corners_text)
 
@@ -935,7 +940,12 @@ def run(
                 "\nWhen you detect a transition to a new corner/segment, "
                 "prepend [CORNER: <corner name>] to the FIRST translated line of that segment. "
                 "Only mark the transition once per segment, not every line. "
-                "Example: [CORNER: Card Illustrations] Let's take a look at the card illustrations."
+                "Example: [CORNER: Card Illustrations] Let's take a look at the card illustrations.\n\n"
+                "IMPORTANT: Do NOT mark a corner just because a cue phrase appears in passing. "
+                "The host may mention a segment topic briefly (e.g. previewing what's coming up later) "
+                "without actually transitioning to that segment. Only mark a corner when the overall "
+                "topic genuinely changes and the conversation shifts to that segment's content. "
+                "Look at the surrounding context, not just a single line."
             )
             final_prompt_parts.append(corners_text)
 
