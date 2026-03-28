@@ -1,6 +1,8 @@
 import hashlib
 import json
 import logging
+import re
+import time
 import traceback
 from pathlib import Path
 
@@ -75,7 +77,9 @@ def translate_subtitles(
     texts_to_translate = []
 
     for event in script.events:
-        # standard Dialogue events or non-commented events
+        # Skip Comment events so they aren't sent to the LLM
+        if isinstance(event, pyass.Event) and event.format == pyass.EventFormat.COMMENT:
+            continue
         if isinstance(event, pyass.Event) and event.text:
             # We don't want to translate raw .ass tags.
             # In a robust implementation, we'd strip {\\tags} before translating.
@@ -164,22 +168,55 @@ def translate_subtitles(
 
     logger.info("Applying translations to subtitle events...")
 
-    # Update the events with the new text
-    for i, event in enumerate(events_to_translate):
-        original_text = texts_to_translate[i]
-        translated_text = translated_texts[i]
+    # Parse corner markers and build the final event list
+    corner_marker_re = re.compile(r"^\[CORNER:\s*(.+?)\]\s*")
+    new_events: list[pyass.Event] = []
+    translated_event_set = set(id(e) for e in events_to_translate)
 
+    # Walk all events in order, preserving non-translated events (e.g. Comments)
+    # in place while applying translations and inserting corner markers.
+    event_idx = 0
+    for event in script.events:
+        if id(event) not in translated_event_set:
+            # Non-dialogue event (Comment, etc.) — keep as-is
+            new_events.append(event)
+            continue
+
+        # Match this event to its translation by index
+        original_text = texts_to_translate[event_idx]
+        translated_text = translated_texts[event_idx]
+        event_idx += 1
+
+        # Check for corner marker in translation
+        corner_match = corner_marker_re.match(translated_text)
+        if corner_match:
+            corner_name = corner_match.group(1)
+            translated_text = translated_text[corner_match.end():]
+            comment = pyass.Event(
+                format=pyass.EventFormat.COMMENT,
+                start=event.start,
+                end=event.end,
+                style=event.style,
+                effect="corner",
+                text=f"=== Corner: {corner_name} ===",
+            )
+            new_events.append(comment)
+            logger.info(f"  Corner detected: {corner_name}")
+
+        # Update the event with the new text
         if bilingual:
             # Create a stacked visual format: Original (small/translucent) on top, Translated (large) on bottom
             # Formatting uses standard ASS override tags
-            new_text_str = f"{{\\\\fs24\\\\a6}}{original_text}{{\\\\N}}{{\\\\fs48\\\\a2}}{translated_text}"
-
             # Since Pyass parses parts, we assign a new EventText part containing our constructed string.
-            # Technically, Pyass will            # overide tags as standard text if we don't parse them,
+            # Technically, Pyass will treat override tags as standard text if we don't parse them,
             # but Aegisub/video players handle raw string output perfectly fine.
-            event.text = new_text_str
+            event.text = f"{{\\\\fs24\\\\a6}}{original_text}{{\\\\N}}{{\\\\fs48\\\\a2}}{translated_text}"
         else:
             event.text = translated_text
+
+        new_events.append(event)
+
+    script.events = new_events
 
     logger.info(f"Writing translated .ass file to {output_ass_path}...")
     with open(output_ass_path, "w", encoding="utf-8") as f:

@@ -559,10 +559,17 @@ def translate(
             final_prompt_parts.append(glossary_text)
 
         if profile_data.get("corners"):
-            corners_text = "Recurring corners/segments (use cue phrases to identify transitions):\n"
+            corners_text = "Recurring corners/segments in this program:\n"
             for corner in profile_data["corners"]:
                 corners_text += f'- {corner["name"]}: {corner["description"]}\n'
-                corners_text += f'  Cue phrases: {", ".join(corner.get("cues", []))}\n'
+                if corner.get("cues"):
+                    corners_text += f'  Common cue phrases: {", ".join(corner["cues"])}\n'
+            corners_text += (
+                "\nWhen you detect a transition to a new corner/segment, "
+                "prepend [CORNER: <corner name>] to the FIRST translated line of that segment. "
+                "Only mark the transition once per segment, not every line. "
+                "Example: [CORNER: Card Illustrations] Let's take a look at the card illustrations."
+            )
             final_prompt_parts.append(corners_text)
 
     if prompt:
@@ -895,10 +902,17 @@ def run(
             final_prompt_parts.append(glossary_text)
 
         if profile_data.get("corners"):
-            corners_text = "Recurring corners/segments (use cue phrases to identify transitions):\n"
+            corners_text = "Recurring corners/segments in this program:\n"
             for corner in profile_data["corners"]:
                 corners_text += f'- {corner["name"]}: {corner["description"]}\n'
-                corners_text += f'  Cue phrases: {", ".join(corner.get("cues", []))}\n'
+                if corner.get("cues"):
+                    corners_text += f'  Common cue phrases: {", ".join(corner["cues"])}\n'
+            corners_text += (
+                "\nWhen you detect a transition to a new corner/segment, "
+                "prepend [CORNER: <corner name>] to the FIRST translated line of that segment. "
+                "Only mark the transition once per segment, not every line. "
+                "Example: [CORNER: Card Illustrations] Let's take a look at the card illustrations."
+            )
             final_prompt_parts.append(corners_text)
 
     if vocab:
