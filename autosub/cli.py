@@ -551,6 +551,7 @@ def translate(
 
     final_prompt_parts = []
     final_corner_names = []
+    final_corner_cues = []
     if profile:
         profile_data = load_unified_profile(profile)
         translate_profile = profile_data.get("translate", {})
@@ -561,6 +562,8 @@ def translate(
 
         if profile_data.get("corners"):
             final_corner_names = [c["name"] for c in profile_data["corners"]]
+            for c in profile_data["corners"]:
+                final_corner_cues.extend(c.get("cues", []))
             corners_text = "Recurring corners/segments in this program:\n"
             for corner in profile_data["corners"]:
                 corners_text += f'- {corner["name"]}: {corner["description"]}\n'
@@ -618,6 +621,7 @@ def translate(
             reasoning_dynamic=vertex_reasoning_dynamic,
             chunk_size=chunk_size,
             corner_names=final_corner_names or None,
+            corner_cues=final_corner_cues or None,
             retry_chunks=retry_chunk or None,
             log_dir=translate_log_dir,
         )
@@ -890,6 +894,7 @@ def run(
     final_postprocess_extensions = {}
     replacements = {}
     final_corner_names = []
+    final_corner_cues = []
     profile_speakers_requested = False
     if profile:
         profile_data = load_unified_profile(profile)
@@ -908,6 +913,8 @@ def run(
 
         if profile_data.get("corners"):
             final_corner_names = [c["name"] for c in profile_data["corners"]]
+            for c in profile_data["corners"]:
+                final_corner_cues.extend(c.get("cues", []))
             corners_text = "Recurring corners/segments in this program:\n"
             for corner in profile_data["corners"]:
                 corners_text += f'- {corner["name"]}: {corner["description"]}\n'
@@ -1028,6 +1035,7 @@ def run(
             reasoning_effort=vertex_reasoning_effort,
             chunk_size=chunk_size,
             corner_names=final_corner_names or None,
+            corner_cues=final_corner_cues or None,
             retry_chunks=retry_chunk or None,
             log_dir=translate_log_dir,
         )

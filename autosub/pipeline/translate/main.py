@@ -9,6 +9,7 @@ from pathlib import Path
 import pyass
 from autosub.core.config import PROJECT_ID
 from autosub.core.llm import ReasoningEffort
+from autosub.pipeline.translate.chunker import make_chunks
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ def translate_subtitles(
     reasoning_dynamic: bool | None = None,
     chunk_size: int = 0,
     corner_names: list[str] | None = None,
+    corner_cues: list[str] | None = None,
     retry_chunks: list[int] | None = None,
     log_dir: Path | None = None,
 ) -> None:
@@ -67,6 +69,7 @@ def translate_subtitles(
         reasoning_dynamic: Whether to request dynamic reasoning budget when supported.
         chunk_size: If > 0, split into chunks of this size.
         corner_names: Valid corner names from the profile. If set, only these are accepted as markers.
+        corner_cues: Corner cue phrases from the profile for intelligent chunk boundary detection.
     """
     logger.info(f"Loading '{input_ass_path}' for translation...")
 
@@ -148,6 +151,7 @@ def translate_subtitles(
         if chunk_size > 0:
             translated_texts = _translate_chunked(
                 translator, texts_to_translate, chunk_size, checkpoint_path,
+                corner_cues=corner_cues,
                 retry_chunks=retry_chunks,
                 log_dir=log_dir,
             )
@@ -338,12 +342,13 @@ def _translate_chunked(
     texts: list[str],
     chunk_size: int,
     checkpoint_path: Path,
+    corner_cues: list[str] | None = None,
     retry_chunks: list[int] | None = None,
     log_dir: Path | None = None,
 ) -> list[str]:
     """Split texts into chunks, translate each once, and merge results."""
-    chunks = [texts[i : i + chunk_size] for i in range(0, len(texts), chunk_size)]
-    fingerprint = _compute_fingerprint(texts, chunk_size, corner_cues=None)
+    chunks = make_chunks(texts, chunk_size, corner_cues=corner_cues)
+    fingerprint = _compute_fingerprint(texts, chunk_size, corner_cues)
 
     # Set up structured log directory
     chunks_dir = None
