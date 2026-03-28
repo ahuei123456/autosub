@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 from autosub.core.errors import (
@@ -49,6 +50,7 @@ class BaseVertexLLM:
         operation_name: str,
     ) -> tuple[Any, VertexResponseDiagnostics]:
         client = self._get_client()
+        t0 = time.monotonic()
         try:
             response = client.models.generate_content(
                 model=self.model,
@@ -61,8 +63,9 @@ class BaseVertexLLM:
                 ),
             )
         except Exception as exc:
+            elapsed = time.monotonic() - t0
             raise VertexRequestError(
-                f"{operation_name} request to Vertex failed: {exc}",
+                f"{operation_name} request to Vertex failed after {elapsed:.1f}s: {exc}",
                 project_id=self.project_id,
                 model=self.model,
                 location=self.location,
