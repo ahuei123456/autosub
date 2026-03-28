@@ -258,3 +258,5 @@ __marimo__/
 *.jsonl
 *.ass
 *.txt
+
+/projects
