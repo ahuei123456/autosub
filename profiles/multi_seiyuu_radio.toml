@@ -1,0 +1,9 @@
+prompt = "prompts/multi_seiyuu_radio.md"
+
+[extensions.radio_discourse]
+enabled = true
+engine = "hybrid"
+model = "gemini-3-flash-preview"
+scope = "full_script"
+split_framing_phrases = true
+label_roles = true
