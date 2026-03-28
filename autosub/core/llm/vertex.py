@@ -49,8 +49,9 @@ class BaseVertexLLM:
         response_schema: Any,
         operation_name: str,
     ) -> tuple[Any, VertexResponseDiagnostics]:
+        client = self._get_client()
         try:
-            response = self._get_client().models.generate_content(
+            response = client.models.generate_content(
                 model=self.model,
                 contents=contents,
                 config=types.GenerateContentConfig(
@@ -67,6 +68,11 @@ class BaseVertexLLM:
                 model=self.model,
                 location=self.location,
             ) from exc
+        finally:
+            try:
+                client.close()
+            except Exception:
+                logger.debug("Failed to close Vertex client cleanly.", exc_info=True)
 
         diagnostics = self._build_response_diagnostics(response)
         logger.debug("%s response diagnostics: %s", operation_name, diagnostics)

@@ -1,3 +1,4 @@
+import weakref
 from types import SimpleNamespace
 
 import pytest
@@ -32,6 +33,12 @@ class FakeModels:
 class FakeClient:
     def __init__(self, response=None, error: Exception | None = None):
         self.models = FakeModels(response=response, error=error)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return None
 
 
 def _make_llm() -> DummyVertexLLM:
@@ -149,6 +156,61 @@ def test_generate_structured_json_raises_parse_error_with_preview(monkeypatch):
     assert "response_id=resp-2" in message
     assert "text_preview=not json" in message
     assert "finish_reasons=STOP" in message
+
+
+def test_generate_structured_json_keeps_client_alive_for_request(monkeypatch):
+    llm = _make_llm()
+    response = SimpleNamespace(
+        text="[]",
+        candidates=[],
+        prompt_feedback=None,
+        response_id="resp-keepalive",
+        model_version="gemini-test-version",
+        usage_metadata=None,
+        sdk_http_response=None,
+    )
+
+    class LifecycleModels:
+        def __init__(self, client):
+            self._client = weakref.ref(client)
+
+        def generate_content(self, **kwargs):
+            client = self._client()
+            if client is None or client.closed:
+                raise RuntimeError(
+                    "Cannot send a request, as the client has been closed."
+                )
+            return response
+
+    class LifecycleClient:
+        def __init__(self):
+            self.closed = False
+            self.models = LifecycleModels(self)
+
+        def close(self):
+            self.closed = True
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self.close()
+            return None
+
+        def __del__(self):
+            self.close()
+
+    monkeypatch.setattr(llm, "_get_client", LifecycleClient)
+
+    parsed, diagnostics = llm._generate_structured_json(
+        contents="[]",
+        system_instruction="test",
+        response_schema=list[dict],
+        operation_name="Vertex test operation",
+    )
+
+    assert parsed == []
+    assert diagnostics.response_id == "resp-keepalive"
 
 
 def test_vertex_translator_wraps_unexpected_json_shape(monkeypatch):
