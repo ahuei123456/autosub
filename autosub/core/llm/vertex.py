@@ -50,6 +50,8 @@ class BaseVertexLLM:
         operation_name: str,
     ) -> tuple[Any, VertexResponseDiagnostics]:
         client = self._get_client()
+        logger.debug("%s system instruction:\n%s", operation_name, system_instruction)
+        logger.debug("%s input:\n%s", operation_name, contents)
         t0 = time.monotonic()
         try:
             response = client.models.generate_content(
@@ -102,6 +104,9 @@ class BaseVertexLLM:
                     logger.debug(
                         "%s thinking:\n%s", operation_name, part.text[:2000]
                     )
+
+        if response.text:
+            logger.debug("%s raw output:\n%s", operation_name, response.text)
 
         # Warn when finish_reason is not STOP (e.g. MAX_TOKENS, OTHER)
         non_stop = [r for r in diagnostics.candidate_finish_reasons if r != "STOP"]
