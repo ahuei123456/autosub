@@ -485,6 +485,19 @@ Behavior notes:
 - Postprocessing only changes files when an enabled extension actually makes edits.
 - The built-in `run` command postprocesses `translated.ass` in place.
 
+### `autosub assign-speakers`
+
+- Positional: path to the `.ass` subtitle file to update
+- `--speaker-map`: Path to `speaker_map.toml` (required)
+- `--sample-lines`: Number of sample lines per label. Default: `5`
+
+Behavior notes:
+
+- Groups subtitle events by style name and shows samples with timestamps, line count, character count, and time range.
+- Interactively prompts you to assign each style to a speaker from the speaker map.
+- Rewrites the `.ass` file in-place with updated style names and colors.
+- Can be re-run to fix incorrect assignments.
+
 ### `autosub run`
 
 `run` combines the full pipeline above and keeps the common end-to-end options:
@@ -733,6 +746,28 @@ color = "#A0D0FF"
 
 Usage: `--speaker-map speaker_map.toml` on `format`, `translate`, or `run` commands.
 
+- Without a speaker map, diarized output uses auto-assigned colors with raw API labels as style names.
+- With a speaker map on `format` or `run`, styles use character names and specified hex colors.
+- Chirp 3 uses 0-based speaker labels ("0", "1", ...). The label assignment depends on who speaks first — verify against the transcript and swap if needed.
+- Chirp 3 treats the requested speaker count as a loose guideline and may return more labels than requested. Extra labels are carried through as raw styles.
+- Speaker maps are per-project files, typically stored alongside the video in the project directory.
+
+#### Post-Pipeline Speaker Assignment
+
+The recommended workflow is to defer speaker assignment until after reviewing the subtitle file in Aegisub, where you can hear who is speaking:
+
+1. Run the pipeline without speaker assignment — raw diarization labels flow through to the .ass file:
+   ```bash
+   uv run autosub run video.mp4 --speakers 2 --profile my_profile
+   ```
+2. Open the .ass in Aegisub, listen to the audio, and identify which style corresponds to which speaker.
+3. Assign speakers:
+   ```bash
+   uv run autosub assign-speakers video_translated.ass --speaker-map speaker_map.toml
+   ```
+
+The `assign-speakers` command parses the .ass file, shows sample lines per style with timestamps, and prompts you to map each style to a speaker from the speaker map. It rewrites the .ass file in-place with updated style names and colors.
+
 ### Prompt and Vocab Merge Rules
 
 - Prompt fragments from `[translate].prompt` are concatenated in inheritance order: base profile first, child profile after that, then CLI `--prompt` last.
@@ -748,8 +783,53 @@ These keys are currently consumed by the formatter:
 - `min_duration_ms`
 - `snap_threshold_ms`
 - `conditional_snap_threshold_ms`
+- `interjection_max_duration_ms`
+- `interjection_merge_threshold_ms`
+- `interjection_gap_threshold_ms`
 
 No layout-related profile keys are currently wired into the CLI formatter.
+
+### Interjection-Aware Gap Handling
+
+When diarization is enabled, the formatter detects short interjections (e.g. "うん", "そうだね") from one speaker that interrupt another speaker's continuous thought. Without this, speaker A's subtitle would flicker off and back on around the interjection.
+
+**Example — before interjection handling:**
+
+```
+Line 1: [00:00.0 → 00:02.0] Speaker A: "今日のテーマなんですけど、"
+Line 2: [00:02.1 → 00:02.4] Speaker B: "うん"
+Line 3: [00:02.5 → 00:04.0] Speaker A: "ちょっと面白い話がありまして"
+```
+
+Speaker A's subtitle disappears for 500ms (2.0→2.5) while B's "うん" plays, then reappears. This creates a distracting flicker.
+
+**After interjection handling (merge):**
+
+```
+Line 1: [00:00.0 → 00:04.0] Speaker A: "今日のテーマなんですけど、 ちょっと面白い話がありまして"
+Line 2: [00:02.1 → 00:02.4] Speaker B: "うん"
+```
+
+Speaker A's lines are merged into one continuous subtitle. B's interjection overlaps as a separate .ass style (displayed concurrently in Aegisub/video players that support overlapping subtitles).
+
+**Behavior depends on the gap size across the interjection:**
+
+| Gap (A.end → A.start) | Action | Result |
+|---|---|---|
+| ≤ `interjection_merge_threshold_ms` (1500ms) | **Merge** | A's lines are combined into one subtitle spanning the interjection |
+| ≤ `interjection_gap_threshold_ms` (2000ms) | **Extend** | A's lines stay separate but timing is extended to close the gap (meet-in-middle) |
+| > `interjection_gap_threshold_ms` | **Skip** | No change — the gap is too large to be a simple interjection |
+
+The interjection itself (B's line) must be shorter than `interjection_max_duration_ms` (1000ms) to trigger this behavior. Longer responses from B are treated as real dialogue turns, not interjections.
+
+Profile example:
+
+```toml
+[timing]
+interjection_max_duration_ms = 1000
+interjection_merge_threshold_ms = 1500
+interjection_gap_threshold_ms = 2000
+```
 
 ## `radio_discourse` Extension
 
