@@ -1,0 +1,53 @@
+# Default CLI config for `uv run autosub ...`
+#
+# Precedence:
+# 1. Explicit CLI flags
+# 2. Values from this file
+# 3. Built-in command defaults
+#
+# Keep reusable content like prompt files, glossary entries, timing rules,
+# replacements, and extension settings in `profiles/*.toml`.
+# This file is for command-line defaults only.
+
+[transcribe]
+language = "ja-JP"
+# Common defaults to pin here:
+# out = "transcript.json"
+# profile = "suzuhara_nozomi"
+# vocab = ["鈴原希実", "のんちゃん"]
+# start = "00:00:00"
+# end = "00:30:00"
+
+[format]
+# Timing, replacements, and extensions still come from the selected profile.
+# Common defaults to pin here:
+# out = "original.ass"
+# keyframes = "video_keyframes.log"
+# fps = 23.976
+# profile = "suzuhara_nozomi"
+
+[translate]
+target = "en"
+source = "ja"
+model = "gemini-3-flash-preview"
+reasoning_effort = "medium"
+bilingual = false
+chunk_size = 0
+# Common defaults to pin here:
+# out = "translated.ass"
+# prompt = "Preserve tone and keep subtitle lines compact."
+# profile = "suzuhara_nozomi"
+# model = "gpt-5-mini"
+# llm_location = "global"
+# reasoning_budget = 8192
+# reasoning_dynamic = true
+
+[postprocess]
+bilingual = false
+# Common defaults to pin here:
+# out = "translated.final.ass"
+# profile = "suzuhara_nozomi"
+
+# `autosub run` pulls its defaults from the stage sections above.
+# If you ever need run-only overrides like `out_dir` or `extract_keyframes`,
+# the CLI still accepts an optional `[run]` section, but this template omits it.

@@ -163,6 +163,55 @@ uv run autosub postprocess .\translated.ass `
   --bilingual
 ```
 
+## Default CLI Config
+
+`autosub` now auto-loads `.\config.toml` when that file exists.
+
+Precedence is:
+
+- explicit CLI flags
+- `config.toml`
+- built-in command defaults
+
+You can override the path with `--config .\some-other.toml` or disable config loading for one run with `--no-config`.
+
+The repo root now includes a template [`config.toml`](./config.toml) with one section per pipeline stage command:
+
+- `[transcribe]`
+- `[format]`
+- `[translate]`
+- `[postprocess]`
+
+`autosub run` derives its defaults from those stage sections automatically, so it does not need its own config block in the normal case.
+
+Use `config.toml` for command-line defaults you want every run to inherit, especially:
+
+- `profile`
+- `model`
+- `llm_provider`
+- `reasoning_effort`
+- `bilingual`
+- `chunk_size`
+- `start` / `end`
+
+For `autosub run`, the effective defaults are combined from the stage sections:
+
+- transcription flags such as `language`, `vocab`, `profile`, `start`, and `end` come from `[transcribe]`
+- formatting flags such as `keyframes` and `profile` come from `[format]`
+- translation flags such as `prompt`, `target`, `source`, `model`, `llm_provider`, `reasoning_effort`, `bilingual`, and `chunk_size` come from `[translate]`
+- if `[translate]` does not set `bilingual`, `run` falls back to `[postprocess].bilingual`
+
+If you need a run-only override such as `out_dir` or `extract_keyframes`, an optional `[run]` section is still supported, but the default template leaves it out on purpose.
+
+Keep reusable content in `profiles/*.toml` instead:
+
+- prompt text
+- vocabulary lists
+- glossary entries
+- timing rules
+- replacements
+- extension settings
+
 ## Command Reference
 
 ### `autosub transcribe`
