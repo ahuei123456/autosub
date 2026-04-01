@@ -544,7 +544,8 @@ def translate(
         from datetime import datetime
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        translate_log_dir = out.parent / f"{out.stem}_logs_{ts}"
+        log_stem = input_ass.stem.removesuffix("_original")
+        translate_log_dir = input_ass.parent / f"{log_stem}_logs_{ts}"
         translate_log_dir.mkdir(parents=True, exist_ok=True)
         _add_file_logger(translate_log_dir / "run.log")
 
