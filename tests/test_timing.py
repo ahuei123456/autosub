@@ -4,6 +4,7 @@ from autosub.pipeline.format.timing import (
     _apply_min_duration_padding,
     _apply_gap_snapping,
     _apply_micro_snapping,
+    _apply_interjection_merging,
     SegmentMS,
 )
 
@@ -257,3 +258,167 @@ def test_pass3_micro_snapping_isolated():
         segments, keyframes=[1050], micro_snap_threshold=250, video_duration_ms=None
     )
     assert result[0].end_ms == 1050
+
+
+# ── Interjection Merging Tests ──
+
+
+def test_interjection_merge_basic():
+    """A-B_short-A pattern with short span → merges A's lines."""
+    lines = [
+        SubtitleLine(text="Speaker A start", start_time=0.0, end_time=2.0, speaker="A"),
+        SubtitleLine(text="うん", start_time=2.1, end_time=2.4, speaker="B"),
+        SubtitleLine(text="Speaker A continues", start_time=2.5, end_time=4.0, speaker="A"),
+    ]
+    segments = [SegmentMS(line) for line in lines]
+    result = _apply_interjection_merging(
+        segments,
+        interjection_max_duration_ms=1000,
+        interjection_merge_threshold_ms=1500,
+        interjection_gap_threshold_ms=2000,
+    )
+    # A's lines merged, B interjection untouched
+    assert len(result) == 2
+    assert result[0].text == "Speaker A start Speaker A continues"
+    assert result[0].speaker == "A"
+    assert result[0].start_ms == 0
+    assert result[0].end_ms == 4000
+    # B's interjection remains
+    assert result[1].text == "うん"
+    assert result[1].speaker == "B"
+
+
+def test_interjection_extend_basic():
+    """A-B_short-A with larger gap → extends A's timing but keeps separate lines."""
+    lines = [
+        SubtitleLine(text="Speaker A start", start_time=0.0, end_time=2.0, speaker="A"),
+        SubtitleLine(text="そうだね", start_time=2.5, end_time=3.0, speaker="B"),
+        SubtitleLine(text="Speaker A continues", start_time=3.8, end_time=5.0, speaker="A"),
+    ]
+    segments = [SegmentMS(line) for line in lines]
+    result = _apply_interjection_merging(
+        segments,
+        interjection_max_duration_ms=1000,
+        interjection_merge_threshold_ms=1500,
+        interjection_gap_threshold_ms=2000,
+    )
+    # A's lines stay separate but gap is closed (meet in middle)
+    assert len(result) == 3
+    gap = result[2].start_ms - result[0].end_ms
+    assert gap == 0  # meet-in-middle closes the gap
+
+
+def test_interjection_no_merge_b_too_long():
+    """B's line is too long to be considered an interjection → no change."""
+    lines = [
+        SubtitleLine(text="A talks", start_time=0.0, end_time=2.0, speaker="A"),
+        SubtitleLine(text="B has a long response here", start_time=2.1, end_time=3.5, speaker="B"),
+        SubtitleLine(text="A continues", start_time=3.6, end_time=5.0, speaker="A"),
+    ]
+    segments = [SegmentMS(line) for line in lines]
+    result = _apply_interjection_merging(
+        segments,
+        interjection_max_duration_ms=1000,
+        interjection_merge_threshold_ms=1500,
+        interjection_gap_threshold_ms=2000,
+    )
+    # B is 1400ms, exceeds 1000ms threshold → no change
+    assert len(result) == 3
+    assert result[0].text == "A talks"
+    assert result[2].text == "A continues"
+
+
+def test_interjection_different_speakers_both_sides():
+    """Different speakers on each side of the interjection → no merge."""
+    lines = [
+        SubtitleLine(text="Speaker A", start_time=0.0, end_time=2.0, speaker="A"),
+        SubtitleLine(text="うん", start_time=2.1, end_time=2.4, speaker="B"),
+        SubtitleLine(text="Speaker C", start_time=2.5, end_time=4.0, speaker="C"),
+    ]
+    segments = [SegmentMS(line) for line in lines]
+    result = _apply_interjection_merging(
+        segments,
+        interjection_max_duration_ms=1000,
+        interjection_merge_threshold_ms=1500,
+        interjection_gap_threshold_ms=2000,
+    )
+    assert len(result) == 3
+
+
+def test_interjection_multiple_sequential():
+    """A-B-A-B-A pattern → first A-B-A merges, then merged A-B-A merges again."""
+    lines = [
+        SubtitleLine(text="A part 1", start_time=0.0, end_time=2.0, speaker="A"),
+        SubtitleLine(text="うん", start_time=2.1, end_time=2.3, speaker="B"),
+        SubtitleLine(text="A part 2", start_time=2.4, end_time=4.0, speaker="A"),
+        SubtitleLine(text="そう", start_time=4.1, end_time=4.3, speaker="B"),
+        SubtitleLine(text="A part 3", start_time=4.4, end_time=6.0, speaker="A"),
+    ]
+    segments = [SegmentMS(line) for line in lines]
+    result = _apply_interjection_merging(
+        segments,
+        interjection_max_duration_ms=1000,
+        interjection_merge_threshold_ms=1500,
+        interjection_gap_threshold_ms=2000,
+    )
+    # First merge: A1+A2 across B1. Result: [A_merged(0-4000), B1, B2, A3]
+    # B1 and B2 are consecutive B's, not an A-B-A pattern, so A3 stays separate.
+    a_lines = [s for s in result if s.speaker == "A"]
+    b_lines = [s for s in result if s.speaker == "B"]
+    assert len(a_lines) == 2
+    assert a_lines[0].text == "A part 1 A part 2"
+    assert a_lines[1].text == "A part 3"
+    assert len(b_lines) == 2
+
+
+def test_interjection_already_overlapping():
+    """Lines already overlap (gap ≤ 0) → no interjection merging."""
+    lines = [
+        SubtitleLine(text="A talks", start_time=0.0, end_time=2.5, speaker="A"),
+        SubtitleLine(text="うん", start_time=2.0, end_time=2.3, speaker="B"),
+        SubtitleLine(text="A continues", start_time=2.3, end_time=4.0, speaker="A"),
+    ]
+    segments = [SegmentMS(line) for line in lines]
+    result = _apply_interjection_merging(
+        segments,
+        interjection_max_duration_ms=1000,
+        interjection_merge_threshold_ms=1500,
+        interjection_gap_threshold_ms=2000,
+    )
+    # Gap from A.end (2500) to A.start (2300) is negative → skip
+    assert len(result) == 3
+
+
+def test_interjection_gap_too_large():
+    """Gap between A's lines exceeds threshold → no merge."""
+    lines = [
+        SubtitleLine(text="A talks", start_time=0.0, end_time=2.0, speaker="A"),
+        SubtitleLine(text="うん", start_time=3.0, end_time=3.2, speaker="B"),
+        SubtitleLine(text="A continues", start_time=5.0, end_time=7.0, speaker="A"),
+    ]
+    segments = [SegmentMS(line) for line in lines]
+    result = _apply_interjection_merging(
+        segments,
+        interjection_max_duration_ms=1000,
+        interjection_merge_threshold_ms=1500,
+        interjection_gap_threshold_ms=2000,
+    )
+    # Gap from A.end (2000) to A.start (5000) = 3000ms > 2000ms threshold
+    assert len(result) == 3
+
+
+def test_interjection_no_speakers():
+    """Lines without speaker labels → no interjection merging."""
+    lines = [
+        SubtitleLine(text="Line 1", start_time=0.0, end_time=2.0, speaker=None),
+        SubtitleLine(text="Line 2", start_time=2.1, end_time=2.3, speaker=None),
+        SubtitleLine(text="Line 3", start_time=2.4, end_time=4.0, speaker=None),
+    ]
+    segments = [SegmentMS(line) for line in lines]
+    result = _apply_interjection_merging(
+        segments,
+        interjection_max_duration_ms=1000,
+        interjection_merge_threshold_ms=1500,
+        interjection_gap_threshold_ms=2000,
+    )
+    assert len(result) == 3

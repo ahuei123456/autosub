@@ -393,6 +393,15 @@ def format_subtitles(
         conditional_snap_threshold_ms=timing_config.get(
             "conditional_snap_threshold_ms", 500
         ),
+        interjection_max_duration_ms=timing_config.get(
+            "interjection_max_duration_ms", 1000
+        ),
+        interjection_merge_threshold_ms=timing_config.get(
+            "interjection_merge_threshold_ms", 1500
+        ),
+        interjection_gap_threshold_ms=timing_config.get(
+            "interjection_gap_threshold_ms", 2000
+        ),
     )
 
     logger.info(f"Writing .ass file to {output_ass_path}...")

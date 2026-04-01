@@ -299,6 +299,57 @@ def _apply_micro_snapping(
     return segments
 
 
+def _apply_interjection_merging(
+    segments: List[SegmentMS],
+    interjection_max_duration_ms: int,
+    interjection_merge_threshold_ms: int,
+    interjection_gap_threshold_ms: int,
+) -> List[SegmentMS]:
+    """Pass 0: Speaker-aware interjection handling.
+
+    Detects the pattern [A] [B_short] [A] where B is a brief interjection
+    (e.g. "yeah", "mmhmm") interrupting speaker A's continuous thought.
+    Merges or extends A's lines across the interjection so there's no visual gap.
+    B's interjection is left untouched (overlaps in .ass output).
+    """
+    i = 0
+    while i < len(segments) - 2:
+        prev_seg = segments[i]
+        mid_seg = segments[i + 1]
+        next_seg = segments[i + 2]
+
+        # Check the A-B-A pattern
+        if (
+            prev_seg.speaker
+            and prev_seg.speaker == next_seg.speaker
+            and prev_seg.speaker != mid_seg.speaker
+        ):
+            mid_duration = mid_seg.end_ms - mid_seg.start_ms
+            span_gap = next_seg.start_ms - prev_seg.end_ms
+
+            if (
+                mid_duration <= interjection_max_duration_ms
+                and span_gap > 0
+                and span_gap <= interjection_gap_threshold_ms
+            ):
+                if span_gap <= interjection_merge_threshold_ms:
+                    # MERGE: combine A's lines into one
+                    prev_seg.text = f"{prev_seg.text} {next_seg.text}".strip()
+                    prev_seg.end_ms = next_seg.end_ms
+                    segments.pop(i + 2)
+                    # Don't advance i — check if another interjection follows
+                    continue
+                else:
+                    # EXTEND: close the gap between A's lines (meet in middle)
+                    gap = next_seg.start_ms - prev_seg.end_ms
+                    half_gap = gap // 2
+                    prev_seg.end_ms += half_gap
+                    next_seg.start_ms -= gap - half_gap
+        i += 1
+
+    return segments
+
+
 def apply_timing_rules(
     lines: List[SubtitleLine],
     keyframes_ms: Optional[List[int]] = None,
@@ -306,6 +357,9 @@ def apply_timing_rules(
     min_duration_ms: int = 500,
     snap_threshold_ms: int = 250,
     conditional_snap_threshold_ms: int = 500,
+    interjection_max_duration_ms: int = 1000,
+    interjection_merge_threshold_ms: int = 1500,
+    interjection_gap_threshold_ms: int = 2000,
 ) -> List[SubtitleLine]:
     """Applies advanced timing rules to subtitle lines."""
 
@@ -314,6 +368,14 @@ def apply_timing_rules(
 
     keyframes = sorted(keyframes_ms) if keyframes_ms else []
     segments = [SegmentMS(line) for line in lines]
+
+    # Pass 0: Speaker-aware interjection merging (before gap snapping)
+    segments = _apply_interjection_merging(
+        segments,
+        interjection_max_duration_ms,
+        interjection_merge_threshold_ms,
+        interjection_gap_threshold_ms,
+    )
 
     segments = _apply_min_duration_padding(
         segments, keyframes, video_duration_ms, min_duration_ms
