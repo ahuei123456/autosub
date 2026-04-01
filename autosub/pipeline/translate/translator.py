@@ -28,7 +28,7 @@ class VertexTranslator(BaseTranslator, BaseStructuredLLM):
         location: str = "global",
         temperature: float = 0.1,
         provider: str = "google-vertex",
-        reasoning_effort: ReasoningEffort | None = ReasoningEffort.MEDIUM,
+        reasoning_effort: ReasoningEffort | None = ReasoningEffort.HIGH,
         reasoning_budget_tokens: int | None = None,
         reasoning_dynamic: bool | None = None,
         provider_options: dict[str, object] | None = None,
