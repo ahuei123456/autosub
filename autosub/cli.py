@@ -1,6 +1,7 @@
 import typer
 import logging
 from pathlib import Path
+from typing import Sequence
 
 from click.core import ParameterSource
 
@@ -11,6 +12,7 @@ from autosub.core.cli_config import (
     load_cli_config,
 )
 from autosub.core.llm import ReasoningEffort
+from autosub.core.utils import parse_timestamp
 from autosub.pipeline.transcribe import main as transcribe_main
 from autosub.pipeline.format import main as format_module
 from autosub.pipeline.postprocess import main as postprocess_module
@@ -75,6 +77,64 @@ def _infer_llm_provider(model_name: str) -> str:
     )
 
 
+def _coerce_time_values(
+    value: str | Sequence[str] | None,
+) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+
+def _validate_time_range(
+    start_time: str | None, end_time: str | None, range_number: int | None = None
+) -> None:
+    label_prefix = f"Range {range_number}: " if range_number is not None else ""
+    try:
+        start_seconds = parse_timestamp(start_time) if start_time is not None else None
+        end_seconds = parse_timestamp(end_time) if end_time is not None else None
+    except ValueError as exc:
+        raise typer.BadParameter(
+            f"{label_prefix}{exc}", param_hint="--start/--end"
+        ) from exc
+
+    if (
+        start_seconds is not None
+        and end_seconds is not None
+        and end_seconds <= start_seconds
+    ):
+        raise typer.BadParameter(
+            f"{label_prefix}end time must be greater than start time.",
+            param_hint="--start/--end",
+        )
+
+
+def _normalize_time_ranges(
+    start: str | Sequence[str] | None, end: str | Sequence[str] | None
+) -> list[tuple[str | None, str | None]]:
+    starts = _coerce_time_values(start)
+    ends = _coerce_time_values(end)
+
+    if len(starts) <= 1 and len(ends) <= 1:
+        start_time = starts[0] if starts else None
+        end_time = ends[0] if ends else None
+        _validate_time_range(start_time, end_time)
+        return [(start_time, end_time)]
+
+    if len(starts) != len(ends):
+        raise typer.BadParameter(
+            "When using repeated --start/--end flags, the number of starts and ends must match.",
+            param_hint="--start/--end",
+        )
+
+    time_ranges: list[tuple[str | None, str | None]] = []
+    for index, (start_time, end_time) in enumerate(zip(starts, ends), start=1):
+        _validate_time_range(start_time, end_time, range_number=index)
+        time_ranges.append((start_time, end_time))
+    return time_ranges
+
+
 @app.command()
 def transcribe(
     ctx: typer.Context,
@@ -104,15 +164,15 @@ def transcribe(
         "--profile",
         help="Profile name to load transcription vocabulary hints.",
     ),
-    start: str = typer.Option(
+    start: list[str] = typer.Option(
         None,
         "--start",
-        help="Start time for transcription (e.g. 00:01:00 or 60).",
+        help="Start time for transcription (e.g. 00:01:00 or 60). Can be passed multiple times and pairs by order with --end.",
     ),
-    end: str = typer.Option(
+    end: list[str] = typer.Option(
         None,
         "--end",
-        help="End time for transcription (e.g. 00:04:00 or 240).",
+        help="End time for transcription (e.g. 00:04:00 or 240). Can be passed multiple times and pairs by order with --start.",
     ),
 ):
     """
@@ -136,6 +196,7 @@ def transcribe(
     profile = resolved["profile"]
     start = resolved["start"]
     end = resolved["end"]
+    time_ranges = _normalize_time_ranges(start, end)
 
     logger.info(f"Starting transcription pipeline for: {video_path}")
 
@@ -152,8 +213,7 @@ def transcribe(
             output,
             language,
             final_vocab,
-            start_time=start,
-            end_time=end,
+            time_ranges=time_ranges,
         )
         logger.info(f"Success! Saved {len(result.words)} words to {output}")
     except Exception as e:
@@ -519,15 +579,15 @@ def run(
         "--extract-keyframes/--no-extract-keyframes",
         help="Automatically extract keyframes when optional external tooling is installed.",
     ),
-    start: str = typer.Option(
+    start: list[str] = typer.Option(
         None,
         "--start",
-        help="Start time for transcription (e.g. 00:01:00 or 60).",
+        help="Start time for transcription (e.g. 00:01:00 or 60). Can be passed multiple times and pairs by order with --end.",
     ),
-    end: str = typer.Option(
+    end: list[str] = typer.Option(
         None,
         "--end",
-        help="End time for transcription (e.g. 00:04:00 or 240).",
+        help="End time for transcription (e.g. 00:04:00 or 240). Can be passed multiple times and pairs by order with --start.",
     ),
     chunk_size: int = typer.Option(
         0,
@@ -576,6 +636,7 @@ def run(
     start = resolved["start"]
     end = resolved["end"]
     chunk_size = resolved["chunk_size"]
+    time_ranges = _normalize_time_ranges(start, end)
 
     logger.info(f"Starting full autosub pipeline for: {video_path}")
 
@@ -624,8 +685,7 @@ def run(
             transcript_out,
             language,
             final_vocab,
-            start_time=start,
-            end_time=end,
+            time_ranges=time_ranges,
         )
     except Exception as e:
         logger.error(f"Failed during transcription: {e}")

@@ -1,4 +1,5 @@
 import autosub.cli as cli_module
+from types import SimpleNamespace
 from typer.testing import CliRunner
 
 from autosub.cli import app
@@ -130,6 +131,59 @@ def test_run_model_infers_provider(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert captured["provider"] == "openai"
     assert captured["model"] == "gpt-5-mini"
+
+
+def test_transcribe_supports_multiple_ranges(tmp_path, monkeypatch):
+    video_path = tmp_path / "video.mp4"
+    video_path.write_text("fake", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_transcribe(*args, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(words=[])
+
+    monkeypatch.setattr(cli_module.transcribe_main, "transcribe", fake_transcribe)
+
+    result = runner.invoke(
+        app,
+        [
+            "transcribe",
+            str(video_path),
+            "--start",
+            "0",
+            "--start",
+            "15",
+            "--end",
+            "5",
+            "--end",
+            "20",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["time_ranges"] == [("0", "5"), ("15", "20")]
+
+
+def test_transcribe_rejects_mismatched_multiple_ranges(tmp_path):
+    video_path = tmp_path / "video.mp4"
+    video_path.write_text("fake", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "transcribe",
+            str(video_path),
+            "--start",
+            "0",
+            "--start",
+            "15",
+            "--end",
+            "5",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "the number of starts and ends must match" in result.output
 
 
 def test_translate_uses_default_config_when_flags_are_absent(tmp_path, monkeypatch):
@@ -305,11 +359,54 @@ def test_run_inherits_stage_defaults_without_run_section(tmp_path, monkeypatch):
     assert transcribe_kwargs is not None
     assert transcribe_args[2] == "en-US"
     assert transcribe_args[3] == ["idol", "seiyuu"]
-    assert transcribe_kwargs["start_time"] == "00:01:00"
-    assert transcribe_kwargs["end_time"] == "00:02:00"
+    assert transcribe_kwargs["time_ranges"] == [("00:01:00", "00:02:00")]
     assert captured_translate["provider"] == "openai"
     assert captured_translate["model"] == "gpt-5-mini"
     assert captured_translate["reasoning_effort"] == ReasoningEffort.LOW
     assert captured_translate["bilingual"] is True
     assert captured_translate["chunk_size"] == 7
     assert captured_translate["target_lang"] == "fr"
+
+
+def test_run_supports_multiple_transcription_ranges(tmp_path, monkeypatch):
+    video_path = tmp_path / "video.mp4"
+    video_path.write_text("fake", encoding="utf-8")
+
+    captured_transcribe: dict[str, object] = {}
+
+    def fake_transcribe(*args, **kwargs):
+        captured_transcribe.update(kwargs)
+
+    monkeypatch.setattr(cli_module.transcribe_main, "transcribe", fake_transcribe)
+    monkeypatch.setattr(
+        cli_module.format_module, "format_subtitles", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(
+        cli_module.postprocess_module,
+        "postprocess_subtitles",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        cli_module.translate_module,
+        "translate_subtitles",
+        lambda *args, **kwargs: None,
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(video_path),
+            "--start",
+            "0",
+            "--start",
+            "15",
+            "--end",
+            "5",
+            "--end",
+            "20",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured_transcribe["time_ranges"] == [("0", "5"), ("15", "20")]

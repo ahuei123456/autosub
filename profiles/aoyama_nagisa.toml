@@ -1,0 +1,39 @@
+extends = ["solo_seiyuu_radio"]
+
+prompt = "prompts/aoyama_nagisa.md"
+
+vocab = [
+  "青山なぎさ",
+  "青山なぎさのさ！",
+  "音泉",
+  "チャッピー",
+  "ナっこ",
+  "葉月恋",
+  "リエラ",
+  "Liella!",
+  "シエル",
+  "確定申告",
+  "サナギのなぎさ",
+  "全流行のコーナー",
+  "さんざめく",
+  "解放",
+  "省エネ"
+]
+
+[replacements]
+"渚" = "なぎさ"
+"凪砂" = "なぎさ"
+"青山なぎさのさあ。" = "青山なぎさのさ！"
+
+[glossary]
+"青山なぎさのさ！" = "Aoyama Nagisa no Sa!"
+"ナっこ" = "Na-kko" # Fan collective name
+"チャッピー" = "Chappy" # Her nickname for ChatGPT
+"サナギのなぎさ" = "Chrysalis Nagisa" # Segment corner name
+"全流行のコーナー" = "All-Trends Corner" # Segment corner name
+"青山なぎさはさんざめく！" = "Aoyama Nagisa is Bustling!" # PREMIUM bonus segment
+"解放" = "Kaihou" # Her solo debut single; English title: 'Release' [5]
+"省エネ" = "Sho-ene" # Her 'energy-saving' or low-energy speech style [2]
+"ストローぶくぶく" = "Straw Bubbling" # Her specific vocal training/warm-up method [2]
+"さけび" = "Sakebi" # The 'Shout' or 'Scream' segment corner [6]
+"今日の最後の一言" = "The Last Word of the Day!" # The closing segment

@@ -2,6 +2,7 @@ import tempfile
 import logging
 import ffmpeg
 from pathlib import Path
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ def extract_audio(
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
     temp_dir = Path(tempfile.gettempdir())
-    output_audio_path = temp_dir / f"{video_path.stem}_audio.wav"
+    output_audio_path = temp_dir / f"{video_path.stem}_audio_{uuid4().hex}.wav"
 
     try:
         input_args = {}

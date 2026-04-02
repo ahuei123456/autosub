@@ -108,7 +108,11 @@ Transcribe:
 ```powershell
 uv run autosub transcribe .\video.mp4 `
   --out .\transcript.json `
-  --profile suzuhara_nozomi
+  --profile suzuhara_nozomi `
+  --start 0 `
+  --start 900 `
+  --end 300 `
+  --end 1200
 ```
 
 Format with an existing keyframe log:
@@ -237,11 +241,15 @@ Keep reusable content in `profiles/*.toml` instead:
 - `--language`, `-l`: Speech recognition language code. Default: `ja-JP`
 - `--vocab`, `-v`: Additional speech adaptation hints. Can be passed multiple times.
 - `--profile`: Loads profile vocabulary.
+- `--start`: Start time for transcription. Can be passed multiple times and pairs by order with `--end`.
+- `--end`: End time for transcription. Can be passed multiple times and pairs by order with `--start`.
 
 Behavior notes:
 
 - Audio shorter than about 60 seconds is sent directly to the API.
 - Longer audio is uploaded to GCS first and transcribed as a batch job.
+- Repeated `--start` and `--end` flags are grouped by position, so `--start 0 --start 15 --end 5 --end 20` transcribes `0-5` and `15-20`.
+- When multiple ranges are provided, segment transcription requests run concurrently and the merged `transcript.json` keeps original video timestamps.
 
 ### `autosub format`
 
@@ -339,6 +347,7 @@ Behavior notes:
 
 - `run` defaults to the Vertex AI translation path, but you can switch to direct Anthropic with `--llm-provider anthropic`.
 - If you need `cloud-v3` or advanced LLM overrides such as model, location, or dynamic reasoning settings, run the stages separately and use `autosub translate`.
+- Repeated `--start` and `--end` flags behave the same as `autosub transcribe`, and the selected transcription segments run concurrently before the downstream stages continue.
 
 Example:
 

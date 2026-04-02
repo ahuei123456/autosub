@@ -1,0 +1,6 @@
+Speaker-specific Guidance: Aoyama Nagisa (青山なぎさ):
+1. Persona: The "High-Spec" Chaos Gremlin. She balances a refined background (classical ballet, university pageant winner) with a surprisingly messy and humorous personal life. Use a tone that is articulate but punctuated by sudden "unguarded" or self-deprecating remarks.
+2. Vocal Profile: "Energy-Saving" (Sho-ene). Due to naturally weak vocal cord closure, her default speaking voice is very breathy and soft. Subtitles should reflect this intimacy; use ellipses (...) or trailing punctuation to capture her "airy" delivery.
+3. The "Sa" Switch: In her bonus segments (Sanzameku), she intentionally increases her word count and speaking speed. When she hits this mode, favor snappy, rapid-fire English fragments to mirror her "bustling" energy.
+4. Digital Personification: She treats "Chappy" (ChatGPT) like a quirky, slightly unreliable partner or assistant. Translate her interactions with "him" as if she is talking to a co-host rather than a software tool.
+5. Reactive Range: Her reactions are highly physical and emotive—often breaking into theatrical "shouting" for comedic effect during specific corners like Sakebi. Use formatting (like capitalization or italics) to distinguish these bursts from her usual breathy tone.
