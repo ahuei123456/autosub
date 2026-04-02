@@ -20,9 +20,11 @@ DEFAULT_PRESET = "medium"
 class JobPaths:
     input_video: Path
     subtitle: Path | None
-    frame_image: Path
+    frame_image: Path | None
     upscaled_image: Path
     output_video: Path
+    should_extract_frame: bool
+    should_upscale_frame: bool
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,12 +50,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--frame-image",
         type=Path,
-        help="Optional path for the extracted first-frame PNG.",
+        help="Optional existing extracted frame PNG to use instead of extracting one.",
     )
     parser.add_argument(
         "--upscaled-image",
         type=Path,
-        help="Optional path for the 1080p upscaled PNG.",
+        help="Optional existing 1080p PNG to use instead of generating one.",
     )
     parser.add_argument(
         "--fps",
@@ -111,14 +113,30 @@ def resolve_job_paths(
     ext = ".mp4" if subtitle_path else ".mkv"
 
     resolved_output = _abs(output) if output else parent / f"{stem}_freeze_1080p{ext}"
-    resolved_frame = _abs(frame_image) if frame_image else parent / f"{stem}_frame0.png"
-    resolved_upscaled = (
-        _abs(upscaled_image) if upscaled_image else parent / f"{stem}_frame0_1080p.png"
-    )
+    resolved_frame_arg = _abs(frame_image) if frame_image else None
+    resolved_upscaled_arg = _abs(upscaled_image) if upscaled_image else None
 
     if resolved_output.suffix.lower() != ext:
         mode = "Subtitle burn-in" if subtitle_path else "Non-subtitle"
         raise ValueError(f"{mode} mode requires {ext} output: {resolved_output}")
+
+    if resolved_frame_arg and not resolved_frame_arg.is_file():
+        raise FileNotFoundError(f"Frame image not found: {resolved_frame_arg}")
+    if resolved_upscaled_arg and not resolved_upscaled_arg.is_file():
+        raise FileNotFoundError(f"Upscaled image not found: {resolved_upscaled_arg}")
+
+    should_extract_frame = resolved_frame_arg is None and resolved_upscaled_arg is None
+    should_upscale_frame = resolved_upscaled_arg is None
+
+    resolved_frame = resolved_frame_arg
+    if should_extract_frame:
+        resolved_frame = parent / f"{stem}_frame0.png"
+
+    resolved_upscaled = (
+        resolved_upscaled_arg
+        if resolved_upscaled_arg
+        else parent / f"{stem}_frame0_1080p.png"
+    )
 
     return JobPaths(
         input_video=input_video,
@@ -126,6 +144,8 @@ def resolve_job_paths(
         frame_image=resolved_frame,
         upscaled_image=resolved_upscaled,
         output_video=resolved_output,
+        should_extract_frame=should_extract_frame,
+        should_upscale_frame=should_upscale_frame,
     )
 
 
@@ -191,7 +211,13 @@ def run_ffmpeg(stream: Any, overwrite: bool = False) -> None:
 def ensure_output_paths(paths: JobPaths, overwrite: bool) -> None:
     if overwrite:
         return
-    for p in (paths.frame_image, paths.upscaled_image, paths.output_video):
+    candidates = [paths.output_video]
+    if paths.should_extract_frame and paths.frame_image is not None:
+        candidates.append(paths.frame_image)
+    if paths.should_upscale_frame:
+        candidates.append(paths.upscaled_image)
+
+    for p in candidates:
         if p.exists():
             raise FileExistsError(f"File exists (use --overwrite): {p}")
 
@@ -210,6 +236,8 @@ def escape_filter_path(path: Path) -> str:
 
 
 def extract_first_frame(paths: JobPaths, overwrite: bool) -> None:
+    if paths.frame_image is None:
+        raise RuntimeError("No frame image path is available for extraction.")
     stream = ffmpeg.input(paths.input_video.as_posix()).output(
         paths.frame_image.as_posix(), vframes=1, map="0:v:0"
     )
@@ -217,6 +245,8 @@ def extract_first_frame(paths: JobPaths, overwrite: bool) -> None:
 
 
 def upscale_frame(paths: JobPaths, overwrite: bool) -> None:
+    if paths.frame_image is None:
+        raise RuntimeError("No frame image path is available for upscaling.")
     width, height = TARGET_RESOLUTION
     stream = (
         ffmpeg.input(paths.frame_image.as_posix())
@@ -335,9 +365,14 @@ def main() -> int:
     ensure_output_paths(paths, args.overwrite)
     fps = float(args.fps) if args.fps is not None else get_video_fps(paths.input_video)
 
-    steps = [
-        ("Extracting frame", lambda: extract_first_frame(paths, args.overwrite)),
-        ("Upscaling frame", lambda: upscale_frame(paths, args.overwrite)),
+    steps: list[tuple[str, Any]] = []
+    if paths.should_extract_frame:
+        steps.append(
+            ("Extracting frame", lambda: extract_first_frame(paths, args.overwrite))
+        )
+    if paths.should_upscale_frame:
+        steps.append(("Upscaling frame", lambda: upscale_frame(paths, args.overwrite)))
+    steps.append(
         (
             "Encoding video",
             lambda: create_video(
@@ -349,7 +384,7 @@ def main() -> int:
                 args.audio_bitrate,
             ),
         ),
-    ]
+    )
 
     for msg, func in steps:
         print(f"{msg}...")

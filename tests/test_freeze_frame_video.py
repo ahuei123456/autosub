@@ -17,8 +17,12 @@ def test_resolve_job_paths_creates_default_output_for_non_subtitle_mode(tmp_path
     assert paths.input_video == input_video.resolve()
     assert paths.output_video.suffix == ".mkv"
     assert "freeze_1080p" in paths.output_video.name
+    assert paths.frame_image is not None
     assert paths.frame_image.suffix == ".png"
+    assert paths.upscaled_image.suffix == ".png"
     assert paths.subtitle is None
+    assert paths.should_extract_frame is True
+    assert paths.should_upscale_frame is True
 
 
 def test_resolve_job_paths_creates_default_output_for_subtitle_mode(tmp_path):
@@ -37,6 +41,47 @@ def test_resolve_job_paths_creates_default_output_for_subtitle_mode(tmp_path):
 
     assert paths.output_video.suffix == ".mp4"
     assert paths.subtitle == subtitle.resolve()
+
+
+def test_resolve_job_paths_uses_existing_frame_image_without_extracting(tmp_path):
+    input_video = tmp_path / "sample.webm"
+    frame_image = tmp_path / "frame.png"
+    input_video.write_bytes(b"video")
+    frame_image.write_bytes(b"png")
+
+    paths = script.resolve_job_paths(
+        input_video=input_video,
+        subtitle=None,
+        output=None,
+        frame_image=frame_image,
+        upscaled_image=None,
+    )
+
+    assert paths.frame_image == frame_image.resolve()
+    assert paths.should_extract_frame is False
+    assert paths.should_upscale_frame is True
+
+
+def test_resolve_job_paths_uses_existing_upscaled_image_without_intermediate_steps(
+    tmp_path,
+):
+    input_video = tmp_path / "sample.webm"
+    upscaled_image = tmp_path / "frame_1080p.png"
+    input_video.write_bytes(b"video")
+    upscaled_image.write_bytes(b"png")
+
+    paths = script.resolve_job_paths(
+        input_video=input_video,
+        subtitle=None,
+        output=None,
+        frame_image=None,
+        upscaled_image=upscaled_image,
+    )
+
+    assert paths.frame_image is None
+    assert paths.upscaled_image == upscaled_image.resolve()
+    assert paths.should_extract_frame is False
+    assert paths.should_upscale_frame is False
 
 
 def test_resolve_job_paths_enforces_correct_suffix_based_on_mode(tmp_path):
@@ -162,10 +207,38 @@ def test_ensure_output_paths_requires_overwrite_for_existing_files(tmp_path):
         frame_image=None,
         upscaled_image=None,
     )
+    assert paths.frame_image is not None
     paths.frame_image.write_bytes(b"png")
 
     with pytest.raises(FileExistsError, match="--overwrite"):
         script.ensure_output_paths(paths, overwrite=False)
+
+
+def test_ensure_output_paths_allows_existing_input_images(tmp_path):
+    input_video = tmp_path / "sample.webm"
+    frame_image = tmp_path / "frame.png"
+    upscaled_image = tmp_path / "frame_1080p.png"
+    input_video.write_bytes(b"video")
+    frame_image.write_bytes(b"png")
+    upscaled_image.write_bytes(b"png")
+
+    frame_paths = script.resolve_job_paths(
+        input_video=input_video,
+        subtitle=None,
+        output=None,
+        frame_image=frame_image,
+        upscaled_image=None,
+    )
+    script.ensure_output_paths(frame_paths, overwrite=False)
+
+    upscaled_paths = script.resolve_job_paths(
+        input_video=input_video,
+        subtitle=None,
+        output=None,
+        frame_image=None,
+        upscaled_image=upscaled_image,
+    )
+    script.ensure_output_paths(upscaled_paths, overwrite=False)
 
 
 def test_parse_frame_rate_handles_fractional_rate():
