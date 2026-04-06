@@ -112,17 +112,29 @@ Notes:
 - `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`, and `AUTOSUB_GCS_BUCKET` are only needed for Google-backed stages.
 - Long-audio transcription only requires Google Cloud Storage when using the default `chirp_2` backend.
 
-Create local working config files from the tracked samples:
+Set up local-only working files like this:
 
 ```powershell
 Copy-Item .\config.toml.sample .\config.toml
 New-Item -ItemType Directory -Force .\profiles\local | Out-Null
 New-Item -ItemType Directory -Force .\prompts\local | Out-Null
-Copy-Item .\profiles\examples\solo_seiyuu_radio.toml .\profiles\local\my_profile.toml
-Copy-Item .\prompts\examples\solo_seiyuu_radio.md .\prompts\local\my_profile.md
 ```
 
-Edit `.\config.toml`, `.\profiles\local\*.toml`, and `.\prompts\local\*` for real usage. Those files are intentionally gitignored so you do not need to recommit them whenever you add or tweak a profile or prompt.
+Then choose one of these workflows:
+
+- Use a tracked example profile as-is. Example profiles in `.\profiles\examples` and prompt files in `.\prompts\examples` are committed and ready to use directly.
+- Make your own local profile by copying an example into `.\profiles\local\my_profile.toml` and editing it.
+- Only create a file in `.\prompts\local` when you want to override prompt text locally. You do not need to copy every example prompt up front.
+
+Example local profile setup:
+
+```powershell
+Copy-Item .\profiles\examples\solo_seiyuu_radio.toml .\profiles\local\my_profile.toml
+```
+
+If `my_profile.toml` contains `prompt = "prompts/solo_seiyuu_radio.md"`, autosub will automatically prefer `.\prompts\local\solo_seiyuu_radio.md` over the tracked example file if both exist.
+
+`.\config.toml`, `.\profiles\local\*.toml`, and `.\prompts\local\*` are gitignored on purpose, so you do not need to recommit them whenever you add or tweak a profile or prompt.
 
 ## Quick Start
 
@@ -317,7 +329,7 @@ For `autosub run`, the effective defaults are combined from the stage sections:
 
 If you need a run-only override such as `out_dir` or `extract_keyframes`, an optional `[run]` section is still supported, but the default template leaves it out on purpose.
 
-Keep reusable content in profile files instead:
+Keep reusable content in profiles and prompt files instead:
 
 - prompt text
 - vocabulary lists
@@ -326,7 +338,7 @@ Keep reusable content in profile files instead:
 - replacements
 - extension settings
 
-Tracked example prompt fragments live in [`prompts/examples`](./prompts/examples). Your real working prompt files should live in `.\prompts\local`, which is gitignored.
+Tracked example prompt fragments live in [`prompts/examples`](./prompts/examples). Local prompt overrides live in `.\prompts\local`, which is gitignored.
 
 ## Command Reference
 
@@ -478,7 +490,7 @@ uv run autosub run .\video.mp4 `
 
 ## Unified Profile Format
 
-Tracked example profiles live in [`profiles/examples`](./profiles/examples). Your real working profiles should live in `.\profiles\local`, which is gitignored. `--profile <name>` searches in this order:
+Tracked example profiles live in [`profiles/examples`](./profiles/examples). Local working profiles live in `.\profiles\local`, which is gitignored. `--profile <name>` searches in this order:
 
 - `profiles\local\<name>.toml`
 - `profiles\examples\<name>.toml`
@@ -496,7 +508,7 @@ If a profile prompt entry points at `prompts\<name>.md` or `prompts\<name>.txt`,
 - `prompts\examples\<name>.md`
 - `prompts\<name>.md` for backward compatibility
 
-That means you can keep example profiles using stable `prompts/...` references while overriding the actual prompt text locally without editing tracked files.
+You do not need to change the profile path to `prompts\local\...`. Keep the profile entry as `prompts\foo.md`; autosub will check `prompts\local\foo.md` first automatically.
 
 Example:
 
