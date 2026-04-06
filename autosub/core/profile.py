@@ -22,6 +22,27 @@ def _resolve_profile_path(profile_name: str) -> Path | None:
     return None
 
 
+def _resolve_prompt_path(prompt_value: str) -> Path | None:
+    prompt_path = Path(prompt_value)
+    if prompt_path.exists():
+        return prompt_path
+
+    if prompt_path.parts and prompt_path.parts[0] == "prompts":
+        prompts_root = Path("prompts")
+        relative_prompt_path = Path(*prompt_path.parts[1:])
+        search_dirs = (
+            prompts_root / "local",
+            prompts_root / "examples",
+            prompts_root,
+        )
+        for directory in search_dirs:
+            candidate = directory / relative_prompt_path
+            if candidate.exists():
+                return candidate
+
+    return None
+
+
 def _merge_nested_dict(base: dict, override: dict) -> dict:
     merged = dict(base)
     for key, value in override.items():
@@ -84,13 +105,13 @@ def _load_prompt_fragments(
     for raw_part in raw_parts:
         prompt_value = raw_part.strip()
         if prompt_value.endswith(".md") or prompt_value.endswith(".txt"):
-            prompt_file_path = Path(prompt_value)
-            if prompt_file_path.exists():
+            prompt_file_path = _resolve_prompt_path(prompt_value)
+            if prompt_file_path is not None:
                 with open(prompt_file_path, "r", encoding="utf-8") as prompt_file:
                     prompt_parts.append(prompt_file.read().strip())
             else:
                 logger.warning(
-                    f"Prompt file {prompt_file_path} referenced by {profile_name} not found."
+                    f"Prompt file {prompt_value} referenced by {profile_name} not found."
                 )
         else:
             prompt_parts.append(prompt_value)

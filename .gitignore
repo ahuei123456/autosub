@@ -150,6 +150,9 @@ venv.bak/
 /config.toml
 /profiles/local/*.toml
 !/profiles/local/.gitkeep
+/prompts/local/*.md
+/prompts/local/*.txt
+!/prompts/local/.gitkeep
 
 # Spyder project settings
 .spyderproject

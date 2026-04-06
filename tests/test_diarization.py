@@ -69,11 +69,12 @@ def test_soft_punctuation_does_not_split_short_chunk_without_pause():
 def test_profile_prompt_inheritance(tmp_path):
     profile_dir = tmp_path / "profiles"
     prompt_dir = tmp_path / "prompts"
+    prompt_examples_dir = prompt_dir / "examples"
     profile_dir.mkdir()
-    prompt_dir.mkdir()
+    prompt_examples_dir.mkdir(parents=True)
 
-    (prompt_dir / "base.md").write_text("base guidance", encoding="utf-8")
-    (prompt_dir / "child.md").write_text("child guidance", encoding="utf-8")
+    (prompt_examples_dir / "base.md").write_text("base guidance", encoding="utf-8")
+    (prompt_examples_dir / "child.md").write_text("child guidance", encoding="utf-8")
 
     (profile_dir / "base.toml").write_text(
         '[translate]\nprompt = "prompts/base.md"\n', encoding="utf-8"
@@ -91,10 +92,8 @@ def test_profile_prompt_inheritance(tmp_path):
         def __new__(cls, *args, **kwargs):
             if args and args[0] == "profiles":
                 return profile_dir
-            if args and args[0] == "prompts/base.md":
-                return prompt_dir / "base.md"
-            if args and args[0] == "prompts/child.md":
-                return prompt_dir / "child.md"
+            if args and args[0] == "prompts":
+                return prompt_dir
             return super().__new__(cls, *args, **kwargs)
 
     autosub.core.profile.Path = MockPath
@@ -110,10 +109,11 @@ def test_profile_prompt_inheritance(tmp_path):
 def test_legacy_flat_profile_keys_are_mapped_to_stages(tmp_path):
     profile_dir = tmp_path / "profiles"
     prompt_dir = tmp_path / "prompts"
+    prompt_examples_dir = prompt_dir / "examples"
     profile_dir.mkdir()
-    prompt_dir.mkdir()
+    prompt_examples_dir.mkdir(parents=True)
 
-    (prompt_dir / "legacy.md").write_text("legacy guidance", encoding="utf-8")
+    (prompt_examples_dir / "legacy.md").write_text("legacy guidance", encoding="utf-8")
     (profile_dir / "legacy.toml").write_text(
         """
 prompt = "prompts/legacy.md"
@@ -142,8 +142,8 @@ enabled = true
         def __new__(cls, *args, **kwargs):
             if args and args[0] == "profiles":
                 return profile_dir
-            if args and args[0] == "prompts/legacy.md":
-                return prompt_dir / "legacy.md"
+            if args and args[0] == "prompts":
+                return prompt_dir
             return super().__new__(cls, *args, **kwargs)
 
     autosub.core.profile.Path = MockPath
@@ -157,5 +157,43 @@ enabled = true
         assert data["format"]["replacements"] == {"鈴原のぞみ": "鈴原希実"}
         assert data["format"]["extensions"]["radio_discourse"]["enabled"] is True
         assert data["postprocess"]["extensions"]["radio_discourse"]["enabled"] is True
+    finally:
+        autosub.core.profile.Path = original_path
+
+
+def test_local_prompt_overrides_example_prompt(tmp_path):
+    profiles_root = tmp_path / "profiles"
+    profile_examples_dir = profiles_root / "examples"
+    prompts_root = tmp_path / "prompts"
+    prompt_local_dir = prompts_root / "local"
+    prompt_examples_dir = prompts_root / "examples"
+    profile_examples_dir.mkdir(parents=True)
+    prompt_local_dir.mkdir(parents=True)
+    prompt_examples_dir.mkdir(parents=True)
+
+    (profile_examples_dir / "child.toml").write_text(
+        '[translate]\nprompt = "prompts/child.md"\n', encoding="utf-8"
+    )
+    (prompt_examples_dir / "child.md").write_text("example guidance", encoding="utf-8")
+    (prompt_local_dir / "child.md").write_text("local guidance", encoding="utf-8")
+
+    import autosub.core.profile
+
+    original_path = autosub.core.profile.Path
+
+    class MockPath(autosub.core.profile.Path):
+        def __new__(cls, *args, **kwargs):
+            if args and args[0] == "profiles":
+                return profiles_root
+            if args and args[0] == "prompts":
+                return prompts_root
+            return super().__new__(cls, *args, **kwargs)
+
+    autosub.core.profile.Path = MockPath
+
+    try:
+        data = load_unified_profile("child")
+        assert data["translate"]["prompt"] == ["local guidance"]
+        assert data["prompt"] == ["local guidance"]
     finally:
         autosub.core.profile.Path = original_path

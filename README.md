@@ -117,10 +117,12 @@ Create local working config files from the tracked samples:
 ```powershell
 Copy-Item .\config.toml.sample .\config.toml
 New-Item -ItemType Directory -Force .\profiles\local | Out-Null
+New-Item -ItemType Directory -Force .\prompts\local | Out-Null
 Copy-Item .\profiles\examples\solo_seiyuu_radio.toml .\profiles\local\my_profile.toml
+Copy-Item .\prompts\examples\solo_seiyuu_radio.md .\prompts\local\my_profile.md
 ```
 
-Edit `.\config.toml` and `.\profiles\local\*.toml` for real usage. Those files are intentionally gitignored so you do not need to recommit them whenever you add or tweak a profile.
+Edit `.\config.toml`, `.\profiles\local\*.toml`, and `.\prompts\local\*` for real usage. Those files are intentionally gitignored so you do not need to recommit them whenever you add or tweak a profile or prompt.
 
 ## Quick Start
 
@@ -324,6 +326,8 @@ Keep reusable content in profile files instead:
 - replacements
 - extension settings
 
+Tracked example prompt fragments live in [`prompts/examples`](./prompts/examples). Your real working prompt files should live in `.\prompts\local`, which is gitignored.
+
 ## Command Reference
 
 ### `autosub transcribe`
@@ -485,6 +489,14 @@ To create a local profile from a tracked example:
 ```powershell
 Copy-Item .\profiles\examples\solo_seiyuu_radio.toml .\profiles\local\my_profile.toml
 ```
+
+If a profile prompt entry points at `prompts\<name>.md` or `prompts\<name>.txt`, autosub searches in this order:
+
+- `prompts\local\<name>.md`
+- `prompts\examples\<name>.md`
+- `prompts\<name>.md` for backward compatibility
+
+That means you can keep example profiles using stable `prompts/...` references while overriding the actual prompt text locally without editing tracked files.
 
 Example:
 
