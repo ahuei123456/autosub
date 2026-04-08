@@ -48,11 +48,8 @@ def test_translate_help_uses_chunk_size_only():
     assert "--no-chunk" not in result.output
     assert "--model" in result.output
     assert "--llm-provider" in result.output
-    assert "--llm-reasoning-effort" in result.output
-    assert "--llm-reasoning-budget" in result.output
-    assert "--llm-reasoning-dynamic" in result.output
-    assert "--vertex-model" in result.output
-    assert "--vertex-location" in result.output
+    assert "--llm-reasoning" in result.output
+    assert "--llm-location" in result.output
 
 
 def test_run_help_hides_advanced_translation_knobs():
@@ -60,16 +57,12 @@ def test_run_help_hides_advanced_translation_knobs():
 
     assert result.exit_code == 0
     assert "--engine" not in result.output
-    assert "--vertex-model" not in result.output
-    assert "--vertex-location" not in result.output
-    assert "--llm-reasoning-budget" not in result.output
-    assert "--llm-reasoning-dynamic" not in result.output
     assert "--no-chunk" not in result.output
     assert "--model" in result.output
     assert "--backend" in result.output
     assert "--whisper-model" in result.output
     assert "--llm-provider" in result.output
-    assert "--llm-reasoning-effort" in result.output
+    assert "--llm-reasoning" in result.output
     assert "--chunk-size" in result.output
     assert "--start" in result.output
     assert "--end" in result.output
