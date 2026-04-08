@@ -211,7 +211,7 @@ def test_anthropic_reasoning_effort_maps_to_unified_thinking():
 
     assert settings["thinking"] == "low"
     assert settings["temperature"] == 1.0
-    assert settings["max_tokens"] == 16384
+    assert settings["max_tokens"] == 65536
 
 
 def test_anthropic_reasoning_off_disables_thinking():
@@ -225,6 +225,7 @@ def test_anthropic_reasoning_off_disables_thinking():
     settings = llm._build_anthropic_model_settings(llm._get_model_config())
 
     assert settings["thinking"] is False
+    assert settings["max_tokens"] == 65536
 
 
 def test_anthropic_reasoning_budget_maps_to_anthropic_thinking():
@@ -242,7 +243,7 @@ def test_anthropic_reasoning_budget_maps_to_anthropic_thinking():
         "budget_tokens": 2048,
     }
     assert settings["temperature"] == 1.0
-    assert settings["max_tokens"] == 4096
+    assert settings["max_tokens"] == 65536
 
 
 def test_anthropic_medium_reasoning_uses_higher_budget_and_double_max_tokens():
@@ -257,7 +258,7 @@ def test_anthropic_medium_reasoning_uses_higher_budget_and_double_max_tokens():
 
     assert settings["thinking"] == "medium"
     assert settings["temperature"] == 1.0
-    assert settings["max_tokens"] == 32768
+    assert settings["max_tokens"] == 65536
 
 
 def test_anthropic_minimal_reasoning_uses_requested_budget_and_max_tokens():
@@ -272,7 +273,7 @@ def test_anthropic_minimal_reasoning_uses_requested_budget_and_max_tokens():
 
     assert settings["thinking"] == "minimal"
     assert settings["temperature"] == 1.0
-    assert settings["max_tokens"] == 16384
+    assert settings["max_tokens"] == 65536
 
 
 def test_anthropic_high_reasoning_uses_requested_budget_and_max_tokens():
@@ -302,7 +303,7 @@ def test_anthropic_adaptive_models_use_same_max_tokens_policy():
 
     assert settings["thinking"] == "medium"
     assert settings["temperature"] == 1.0
-    assert settings["max_tokens"] == 32768
+    assert settings["max_tokens"] == 65536
 
 
 def test_anthropic_temperature_is_preserved_when_thinking_is_off():

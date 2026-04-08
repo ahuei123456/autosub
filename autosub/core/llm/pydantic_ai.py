@@ -95,11 +95,11 @@ class BaseStructuredLLM:
         ReasoningEffort.HIGH: 32768,
     }
     _ANTHROPIC_MIN_BUDGET = 1024
-    _ANTHROPIC_DEFAULT_MAX_TOKENS = 4096
+    _ANTHROPIC_DEFAULT_MAX_TOKENS = 65536
     _ANTHROPIC_REASONING_MAX_TOKENS: ClassVar[dict[ReasoningEffort, int]] = {
-        ReasoningEffort.MINIMAL: 16384,
-        ReasoningEffort.LOW: 16384,
-        ReasoningEffort.MEDIUM: 32768,
+        ReasoningEffort.MINIMAL: 65536,
+        ReasoningEffort.LOW: 65536,
+        ReasoningEffort.MEDIUM: 65536,
         ReasoningEffort.HIGH: 65536,
     }
     _TRACE_PART_FIELDS = (
@@ -233,7 +233,10 @@ class BaseStructuredLLM:
     def _build_google_model_settings(
         self, config: LLMModelConfig
     ) -> GoogleModelSettings:
-        settings: dict[str, Any] = {"temperature": config.temperature}
+        settings: dict[str, Any] = {
+            "temperature": config.temperature,
+            "max_tokens": self._ANTHROPIC_DEFAULT_MAX_TOKENS,
+        }
         thinking_config = self._build_google_thinking_config(config)
         if self.trace_path is not None:
             thinking_config = dict(thinking_config or {})
@@ -248,7 +251,10 @@ class BaseStructuredLLM:
         if config.reasoning_dynamic is True:
             raise ValueError("Provider 'anthropic' does not support reasoning_dynamic.")
 
-        settings: dict[str, Any] = {"temperature": config.temperature}
+        settings: dict[str, Any] = {
+            "temperature": config.temperature,
+            "max_tokens": self._ANTHROPIC_DEFAULT_MAX_TOKENS,
+        }
         thinking_setting = self._build_anthropic_thinking_setting(config)
         if thinking_setting is not None:
             settings.update(thinking_setting)

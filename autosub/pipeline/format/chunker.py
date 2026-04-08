@@ -6,7 +6,7 @@ SOFT_PUNCTUATION = {"、", ","}
 
 LONG_PAUSE_THRESHOLD = 1.5
 SOFT_PAUSE_THRESHOLD = 0.6
-SOFT_PUNCT_WORD_THRESHOLD = 12
+SOFT_PUNCT_WORD_THRESHOLD = 16
 
 
 def chunk_words_to_lines(words: List[TranscribedWord]) -> List[SubtitleLine]:

@@ -420,9 +420,9 @@ Anthropic notes:
 
 Current Anthropic reasoning defaults in this repo:
 
-- `minimal`: thinking budget `2048`, `max_tokens 16384`
-- `low`: thinking budget `4096`, `max_tokens 16384`
-- `medium`: thinking budget `16384`, `max_tokens 32768`
+- `minimal`: thinking budget `2048`, `max_tokens 65536`
+- `low`: thinking budget `4096`, `max_tokens 65536`
+- `medium`: thinking budget `16384`, `max_tokens 65536`
 - `high`: thinking budget `32768`, `max_tokens 65536`
 
 OpenAI notes:

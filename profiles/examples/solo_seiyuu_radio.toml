@@ -4,7 +4,7 @@ prompt = "prompts/solo_seiyuu_radio.md"
 [format.extensions.radio_discourse]
 enabled = true
 engine = "hybrid"
-model = "gemini-3-flash-preview"
+model = "gemini-3.1-flash-lite-preview"
 scope = "full_script"
 window_size = 10
 window_overlap = 3

@@ -82,6 +82,7 @@ class VertexTranslator(BaseTranslator, BaseStructuredLLM):
             f"10. Move trailing connectives such as 'but', 'and', 'so', 'because', 'though', or 'then' onto the following line.\n"
             f"11. Only use single quotes for contractions. Anywhere else, always use double quotation marks.\n"
             f"12. If a name is a Japanese name, preserve Japanese name order when translating.\n"
+            f"13. Do not use the em-dash character (—) in translations. When separating clauses, prefer to end the current sentence or use a comma to separate causes while making it sound natural in English. Use ellipsis only if the speaker is trailing off before starting the next line.\n"
         )
         if self.system_prompt:
             instruction += (
