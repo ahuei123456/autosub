@@ -19,14 +19,12 @@ from autosub.pipeline.postprocess import main as postprocess_module
 from autosub.pipeline.translate import main as translate_module
 from autosub.core.profile import load_unified_profile
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s:%(levelname)s:%(name)s: %(message)s"
-)
+LOG_FORMAT = "%(asctime)s:%(levelname)s:%(name)s: %(message)s"
+
+logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="AutoSub CLI for Japanese subtitle generation and translation")
-
-LOG_FORMAT = "%(asctime)s:%(levelname)s:%(name)s: %(message)s"
 
 
 def _add_file_logger(log_path: Path) -> None:
