@@ -113,6 +113,14 @@ class VertexTranslator(BaseTranslator, BaseStructuredLLM):
             output_name="subtitle_translations",
         )
 
+        # Store for structured logging by the caller
+        self.last_system_instruction = system_instruction
+        self.last_input = contents
+        self.last_output = json.dumps(
+            [t.model_dump() for t in translations], ensure_ascii=False, indent=2
+        )
+        self.last_diagnostics = diagnostics
+
         try:
             ordered_translations = sorted(translations, key=lambda item: item.id)
             translated_texts = [item.translated for item in ordered_translations]

@@ -28,6 +28,7 @@ class VertexResponseDiagnostics:
     candidates_token_count: int | None = None
     total_token_count: int | None = None
     thoughts_token_count: int | None = None
+    thinking_text: str | None = None
     text_preview: str | None = None
     http_body_preview: str | None = None
 

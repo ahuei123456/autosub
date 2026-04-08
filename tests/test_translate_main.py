@@ -5,6 +5,7 @@ import autosub.pipeline.translate.main as translate_main_module
 import autosub.pipeline.translate.translator as translator_module
 
 from autosub.pipeline.translate.main import (
+    _compute_fingerprint,
     _translate_chunked,
     _load_checkpoint,
     _save_checkpoint,
@@ -101,62 +102,73 @@ def test_chunked_preserves_order(tmp_path):
 def test_save_and_load_checkpoint(tmp_path):
     checkpoint_path = tmp_path / "test.checkpoint.json"
     data = {0: ["a", "b"], 1: ["c", "d"]}
+    fp = "test_fingerprint"
 
-    _save_checkpoint(checkpoint_path, data)
-    loaded = _load_checkpoint(checkpoint_path)
+    _save_checkpoint(checkpoint_path, data, fp)
+    loaded = _load_checkpoint(checkpoint_path, fp)
 
     assert loaded == data
 
 
 def test_load_checkpoint_missing_file(tmp_path):
     checkpoint_path = tmp_path / "nonexistent.json"
-    assert _load_checkpoint(checkpoint_path) == {}
+    assert _load_checkpoint(checkpoint_path, "any") == {}
 
 
 def test_load_checkpoint_corrupt_file(tmp_path):
     checkpoint_path = tmp_path / "corrupt.json"
     checkpoint_path.write_text("not valid json{{{")
-    assert _load_checkpoint(checkpoint_path) == {}
+    assert _load_checkpoint(checkpoint_path, "any") == {}
 
 
 def test_load_checkpoint_not_a_dict(tmp_path):
     checkpoint_path = tmp_path / "bad.json"
     checkpoint_path.write_text('["a", "b"]')
-    assert _load_checkpoint(checkpoint_path) == {}
+    assert _load_checkpoint(checkpoint_path, "any") == {}
 
 
 def test_load_checkpoint_skips_non_integer_keys(tmp_path):
     checkpoint_path = tmp_path / "bad_keys.json"
-    checkpoint_path.write_text('{"0": ["a"], "foo": ["b"], "1": ["c"]}')
-    result = _load_checkpoint(checkpoint_path)
+    import json
+    json.dump({"_fingerprint": "fp", "chunks": {"0": ["a"], "foo": ["b"], "1": ["c"]}},
+              open(checkpoint_path, "w"))
+    result = _load_checkpoint(checkpoint_path, "fp")
     assert result == {0: ["a"], 1: ["c"]}
 
 
 def test_load_checkpoint_skips_negative_keys(tmp_path):
     checkpoint_path = tmp_path / "neg.json"
-    checkpoint_path.write_text('{"-1": ["a"], "0": ["b"]}')
-    result = _load_checkpoint(checkpoint_path)
+    import json
+    json.dump({"_fingerprint": "fp", "chunks": {"-1": ["a"], "0": ["b"]}},
+              open(checkpoint_path, "w"))
+    result = _load_checkpoint(checkpoint_path, "fp")
     assert result == {0: ["b"]}
 
 
 def test_load_checkpoint_skips_empty_lists(tmp_path):
     checkpoint_path = tmp_path / "empty.json"
-    checkpoint_path.write_text('{"0": ["a"], "1": []}')
-    result = _load_checkpoint(checkpoint_path)
+    import json
+    json.dump({"_fingerprint": "fp", "chunks": {"0": ["a"], "1": []}},
+              open(checkpoint_path, "w"))
+    result = _load_checkpoint(checkpoint_path, "fp")
     assert result == {0: ["a"]}
 
 
 def test_load_checkpoint_skips_non_list_values(tmp_path):
     checkpoint_path = tmp_path / "bad_vals.json"
-    checkpoint_path.write_text('{"0": ["a"], "1": "not a list", "2": 42}')
-    result = _load_checkpoint(checkpoint_path)
+    import json
+    json.dump({"_fingerprint": "fp", "chunks": {"0": ["a"], "1": "not a list", "2": 42}},
+              open(checkpoint_path, "w"))
+    result = _load_checkpoint(checkpoint_path, "fp")
     assert result == {0: ["a"]}
 
 
 def test_load_checkpoint_skips_non_string_elements(tmp_path):
     checkpoint_path = tmp_path / "bad_elems.json"
-    checkpoint_path.write_text('{"0": ["a", "b"], "1": [1, 2]}')
-    result = _load_checkpoint(checkpoint_path)
+    import json
+    json.dump({"_fingerprint": "fp", "chunks": {"0": ["a", "b"], "1": [1, 2]}},
+              open(checkpoint_path, "w"))
+    result = _load_checkpoint(checkpoint_path, "fp")
     assert result == {0: ["a", "b"]}
 
 
@@ -164,13 +176,14 @@ def test_chunked_resumes_from_checkpoint(tmp_path):
     """Simulate a previous run that completed chunks 0 and 1, then resume."""
     checkpoint_path = tmp_path / "test.checkpoint.json"
     texts = ["a", "b", "c", "d", "e", "f"]
+    fp = _compute_fingerprint(texts, chunk_size=2, corner_cues=None)
 
     # Pre-populate checkpoint with chunks 0 and 1 already done
     existing = {
         0: ["translated:a", "translated:b"],
         1: ["translated:c", "translated:d"],
     }
-    _save_checkpoint(checkpoint_path, existing)
+    _save_checkpoint(checkpoint_path, existing, fp)
 
     # Track which texts the translator actually receives
     translated_inputs = []
@@ -208,8 +221,8 @@ def test_checkpoint_saved_after_each_chunk(tmp_path):
     translator = FakeTranslator()
 
     with patch("autosub.pipeline.translate.main._save_checkpoint") as mock_save:
-        mock_save.side_effect = lambda path, completed: _save_checkpoint(
-            path, completed
+        mock_save.side_effect = lambda path, completed, fp: _save_checkpoint(
+            path, completed, fp
         )
         _translate_chunked(
             translator, texts, chunk_size=2, checkpoint_path=checkpoint_path
@@ -446,12 +459,13 @@ def test_chunked_all_checkpointed_skips_translation(tmp_path):
     """If all chunks are in the checkpoint, no translation calls should be made."""
     checkpoint_path = tmp_path / "test.checkpoint.json"
     texts = ["a", "b", "c", "d"]
+    fp = _compute_fingerprint(texts, chunk_size=2, corner_cues=None)
 
     existing = {
         0: ["translated:a", "translated:b"],
         1: ["translated:c", "translated:d"],
     }
-    _save_checkpoint(checkpoint_path, existing)
+    _save_checkpoint(checkpoint_path, existing, fp)
 
     translator = MagicMock()
 
@@ -461,3 +475,36 @@ def test_chunked_all_checkpointed_skips_translation(tmp_path):
 
     translator.translate.assert_not_called()
     assert result == ["translated:a", "translated:b", "translated:c", "translated:d"]
+
+
+# --- Fingerprint tests ---
+
+
+def test_load_checkpoint_fingerprint_mismatch(tmp_path):
+    """Checkpoint with wrong fingerprint is discarded."""
+    checkpoint_path = tmp_path / "test.checkpoint.json"
+    _save_checkpoint(checkpoint_path, {0: ["a"]}, "fingerprint_aaa")
+    result = _load_checkpoint(checkpoint_path, "fingerprint_bbb")
+    assert result == {}
+
+
+def test_load_checkpoint_legacy_format_discarded(tmp_path):
+    """Old-format checkpoint (no _fingerprint) is discarded."""
+    checkpoint_path = tmp_path / "legacy.json"
+    import json
+    json.dump({"0": ["a", "b"], "1": ["c"]}, open(checkpoint_path, "w"))
+    result = _load_checkpoint(checkpoint_path, "any_fingerprint")
+    assert result == {}
+
+
+def test_fingerprint_changes_with_texts():
+    fp1 = _compute_fingerprint(["a", "b", "c"], chunk_size=2, corner_cues=None)
+    fp2 = _compute_fingerprint(["b", "c"], chunk_size=2, corner_cues=None)
+    assert fp1 != fp2
+
+
+def test_fingerprint_changes_with_chunk_size():
+    texts = ["a", "b", "c", "d"]
+    fp1 = _compute_fingerprint(texts, chunk_size=2, corner_cues=None)
+    fp2 = _compute_fingerprint(texts, chunk_size=3, corner_cues=None)
+    assert fp1 != fp2
