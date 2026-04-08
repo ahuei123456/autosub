@@ -51,8 +51,8 @@ def transcribe_uri(
     logger.info(f"Starting long-running transcription on {gcs_uri}...")
     operation = client.batch_recognize(request=request)
 
-    # Wait for the operation to complete
-    response = operation.result()
+    # Wait for the operation to complete (default 900s can be too short)
+    response = operation.result(timeout=1800)
     logger.info("Transcription complete!")
     return response  # type: ignore
 

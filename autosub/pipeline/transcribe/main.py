@@ -243,7 +243,70 @@ def _transcribe_time_range(
                     "AUTOSUB_GCS_BUCKET environment variable must be set for videos longer than 1 minute."
                 )
             gcs_bucket = GCS_BUCKET
+            max_chunk_seconds = audio.MAX_CHUNK_MINUTES * 60
 
+            if duration > max_chunk_seconds:
+                # Split into chunks for Chirp 3's word-timestamp limit
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    chunks = audio.split_audio(
+                        audio_path, max_chunk_seconds, Path(tmp_dir)
+                    )
+                    logger.info(
+                        "Split audio into %d chunks (%d min each)",
+                        len(chunks),
+                        audio.MAX_CHUNK_MINUTES,
+                    )
+
+                    all_words: list[TranscribedWord] = []
+                    all_segments: list[TranscriptionSegment] = []
+                    for chunk_idx, (chunk_path, chunk_start) in enumerate(chunks):
+                        chunk_duration = audio.get_audio_duration(chunk_path)
+                        gcs_dest = (
+                            f"autosub_staging/{uuid4()}_{chunk_path.name}"
+                        )
+                        logger.info(
+                            "  Chunk %d/%d: uploading to %s...",
+                            chunk_idx + 1,
+                            len(chunks),
+                            gcs_dest,
+                        )
+                        gcs_uri = gcs.upload_to_gcs(
+                            gcs_bucket, chunk_path, gcs_dest
+                        )
+                        chunk_offset = chunk_start + time_range.offset_seconds
+                        try:
+                            response = api.transcribe_uri(
+                                gcs_uri,
+                                project_id,
+                                [language_code],
+                                vocabulary,
+                                num_speakers,
+                            )
+                            chirp_results = response.results[
+                                gcs_uri
+                            ].inline_result.transcript.results
+                            all_words.extend(
+                                _parse_words(
+                                    chirp_results, chunk_offset, chunk_duration
+                                )
+                            )
+                            all_segments.extend(
+                                _parse_chirp_segments(
+                                    chirp_results, chunk_offset, chunk_duration
+                                )
+                            )
+                        finally:
+                            logger.info(
+                                "  Cleaning up %s...", gcs_dest
+                            )
+                            gcs.delete_from_gcs(gcs_bucket, gcs_uri)
+
+                return TranscriptionResult(
+                    words=all_words,
+                    segments=all_segments,
+                )
+
+            # Single file fits within Chirp 3's limit
             gcs_dest = f"autosub_staging/{uuid4()}_{audio_path.name}"
             logger.info(
                 "Uploading segment %s audio to %s...",
