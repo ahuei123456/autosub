@@ -42,6 +42,38 @@ def _duration_seconds(value: Any) -> float:
     return seconds + (nanos / 1_000_000_000)
 
 
+def _clamp_word_timestamps(
+    raw_start: float, raw_end: float, chunk_duration: float = 0.0
+) -> tuple[float, float]:
+    """Clamp bogus Chirp 3 word timestamps before applying any time offset.
+
+    Chirp 3 internally chunks audio at 18-minute intervals and sometimes
+    returns a previous chunk boundary as the endOffset for words in later
+    chunks (e.g. end_time=1080 for a word at start_time=1853).  This
+    produces end < start, which corrupts subtitle timing.
+
+    When we do our own chunking and know the chunk_duration, we can also
+    catch values that exceed it.  But even without chunk_duration, the
+    end < start check catches the Chirp pattern.
+
+    Must be called *before* adding any time offset — otherwise a bogus 0 s
+    end becomes a plausible-looking timestamp after the offset is added.
+    """
+    start = raw_start
+    end = raw_end
+
+    if chunk_duration > 0:
+        if start > chunk_duration:
+            start = end if end <= chunk_duration else 0.0
+        if end > chunk_duration:
+            end = start
+
+    if end <= 0 or end < start:
+        end = start
+
+    return start, end
+
+
 def _normalize_time_ranges(
     start_time: str | None,
     end_time: str | None,
@@ -62,23 +94,36 @@ def _normalize_time_ranges(
     ]
 
 
-def _parse_words(results: Any, offset_seconds: float) -> list[TranscribedWord]:
+def _parse_words(
+    results: Any, offset_seconds: float, chunk_duration: float = 0.0
+) -> list[TranscribedWord]:
     words_data: list[TranscribedWord] = []
+    clamped_count = 0
     for result in results:
         for alt in result.alternatives:
             for word_info in alt.words:
+                raw_start = _duration_seconds(word_info.start_offset)
+                raw_end = _duration_seconds(word_info.end_offset)
+                start, end = _clamp_word_timestamps(
+                    raw_start, raw_end, chunk_duration
+                )
+                if (start, end) != (raw_start, raw_end):
+                    clamped_count += 1
                 words_data.append(
                     TranscribedWord(
                         word=word_info.word,
-                        start_time=_duration_seconds(word_info.start_offset)
-                        + offset_seconds,
-                        end_time=_duration_seconds(word_info.end_offset)
-                        + offset_seconds,
+                        start_time=start + offset_seconds,
+                        end_time=end + offset_seconds,
                         speaker=word_info.speaker_label
                         if hasattr(word_info, "speaker_label")
                         else None,
                     )
                 )
+    if clamped_count:
+        logger.warning(
+            "Clamped %d bogus word timestamp(s) from Chirp API response.",
+            clamped_count,
+        )
     return words_data
 
 
@@ -97,7 +142,7 @@ def _segment_confidence(alternative: Any) -> float | None:
 
 
 def _parse_chirp_segments(
-    results: Any, offset_seconds: float
+    results: Any, offset_seconds: float, chunk_duration: float = 0.0
 ) -> list[TranscriptionSegment]:
     segments: list[TranscriptionSegment] = []
     for result in results:
@@ -107,12 +152,16 @@ def _parse_chirp_segments(
         alternative = alternatives[0]
         segment_words: list[TranscribedWord] = []
         for word_info in getattr(alternative, "words", []):
+            raw_start = _duration_seconds(word_info.start_offset)
+            raw_end = _duration_seconds(word_info.end_offset)
+            start, end = _clamp_word_timestamps(
+                raw_start, raw_end, chunk_duration
+            )
             segment_words.append(
                 TranscribedWord(
                     word=word_info.word,
-                    start_time=_duration_seconds(word_info.start_offset)
-                    + offset_seconds,
-                    end_time=_duration_seconds(word_info.end_offset) + offset_seconds,
+                    start_time=start + offset_seconds,
+                    end_time=end + offset_seconds,
                     speaker=(
                         word_info.speaker_label
                         if hasattr(word_info, "speaker_label")
@@ -329,9 +378,11 @@ def _transcribe_time_range(
                     gcs_uri
                 ].inline_result.transcript.results
                 return TranscriptionResult(
-                    words=_parse_words(chirp_results, time_range.offset_seconds),
+                    words=_parse_words(
+                        chirp_results, time_range.offset_seconds, duration
+                    ),
                     segments=_parse_chirp_segments(
-                        chirp_results, time_range.offset_seconds
+                        chirp_results, time_range.offset_seconds, duration
                     ),
                 )
             finally:
@@ -346,8 +397,10 @@ def _transcribe_time_range(
             model=transcription_backend,
         )
         return TranscriptionResult(
-            words=_parse_words(response.results, time_range.offset_seconds),
-            segments=_parse_chirp_segments(response.results, time_range.offset_seconds),
+            words=_parse_words(response.results, time_range.offset_seconds, duration),
+            segments=_parse_chirp_segments(
+                response.results, time_range.offset_seconds, duration
+            ),
         )
     finally:
         if audio_path.exists():
