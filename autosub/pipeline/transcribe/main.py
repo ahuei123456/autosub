@@ -370,6 +370,7 @@ def transcribe(
     whisper_batch_size: int = 16,
     whisper_diarize: bool = False,
     whisper_hf_token: str | None = None,
+    replacements: dict[str, str] | None = None,
 ) -> TranscriptionResult:
     """
     End-to-end transcription of a video file:
