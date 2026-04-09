@@ -70,6 +70,7 @@ def test_transcribe_merges_multiple_ranges_concurrently(tmp_path, monkeypatch):
         language_code: str = "ja-JP",
         vocabulary: list[str] | None = None,
         num_speakers: int | None = None,
+        model: str = "chirp_2",
     ) -> SimpleNamespace:
         segment_id = audio_content.decode("utf-8")
         barrier.wait(timeout=2)
@@ -126,6 +127,7 @@ def test_transcribe_fails_if_any_segment_fails(tmp_path, monkeypatch):
         language_code: str = "ja-JP",
         vocabulary: list[str] | None = None,
         num_speakers: int | None = None,
+        model: str = "chirp_2",
     ) -> SimpleNamespace:
         segment_id = audio_content.decode("utf-8")
         barrier.wait(timeout=2)
