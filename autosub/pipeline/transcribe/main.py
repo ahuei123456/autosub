@@ -18,7 +18,8 @@ from autosub.pipeline.transcribe import api, audio, gcs, whisperx_backend
 logger = logging.getLogger(__name__)
 
 DEFAULT_TRANSCRIPTION_BACKEND = "chirp_2"
-SUPPORTED_TRANSCRIPTION_BACKENDS = {DEFAULT_TRANSCRIPTION_BACKEND, "whisperx"}
+SUPPORTED_TRANSCRIPTION_BACKENDS = {DEFAULT_TRANSCRIPTION_BACKEND, "chirp_3", "whisperx"}
+CHIRP_BACKENDS = {"chirp_2", "chirp_3"}
 MAX_CONCURRENT_TRANSCRIPTION_JOBS = 4
 MAX_CONCURRENT_WHISPERX_JOBS = 1
 
@@ -244,8 +245,11 @@ def _transcribe_time_range(
                 )
             gcs_bucket = GCS_BUCKET
             max_chunk_seconds = audio.MAX_CHUNK_MINUTES * 60
+            needs_chunking = (
+                transcription_backend == "chirp_3" and duration > max_chunk_seconds
+            )
 
-            if duration > max_chunk_seconds:
+            if needs_chunking:
                 # Split into chunks for Chirp 3's word-timestamp limit
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     chunks = audio.split_audio(
@@ -278,9 +282,10 @@ def _transcribe_time_range(
                             response = api.transcribe_uri(
                                 gcs_uri,
                                 project_id,
-                                [language_code],
+                                language_code,
                                 vocabulary,
                                 num_speakers,
+                                model=transcription_backend,
                             )
                             chirp_results = response.results[
                                 gcs_uri
@@ -306,7 +311,7 @@ def _transcribe_time_range(
                     segments=all_segments,
                 )
 
-            # Single file fits within Chirp 3's limit
+            # Single file — no chunking needed
             gcs_dest = f"autosub_staging/{uuid4()}_{audio_path.name}"
             logger.info(
                 "Uploading segment %s audio to %s...",
@@ -317,7 +322,8 @@ def _transcribe_time_range(
 
             try:
                 response = api.transcribe_uri(
-                    gcs_uri, project_id, language_code, vocabulary, num_speakers
+                    gcs_uri, project_id, language_code, vocabulary, num_speakers,
+                    model=transcription_backend,
                 )
                 chirp_results = response.results[
                     gcs_uri
@@ -336,7 +342,8 @@ def _transcribe_time_range(
             audio_content = handle.read()
 
         response = api.transcribe_local_file(
-            audio_content, project_id, language_code, vocabulary, num_speakers
+            audio_content, project_id, language_code, vocabulary, num_speakers,
+            model=transcription_backend,
         )
         return TranscriptionResult(
             words=_parse_words(response.results, time_range.offset_seconds),
@@ -368,13 +375,12 @@ def transcribe(
     End-to-end transcription of a video file:
     1. Extracts audio for one or more segments
     2. Decides whether to use GCS (for files > 1min) or direct API (<= 1min)
-    3. Calls the Chirp 2 API for each segment
-    4. Merges results and saves to disk
+    3. Calls the selected Chirp model (chirp_2 or chirp_3) for each segment
+    4. For chirp_3, splits audio into 18-min chunks to avoid empty results
+    5. Merges results and saves to disk
     """
     resolved_backend = _validate_transcription_backend(transcription_backend)
-    project_id = (
-        PROJECT_ID if resolved_backend == DEFAULT_TRANSCRIPTION_BACKEND else None
-    )
+    project_id = PROJECT_ID if resolved_backend in CHIRP_BACKENDS else None
     if resolved_backend == "whisperx" and vocabulary:
         logger.warning(
             "Ignoring vocabulary hints for WhisperX transcription; this backend "
@@ -483,7 +489,7 @@ def transcribe(
             model=(
                 whisper_model
                 if resolved_backend == "whisperx"
-                else DEFAULT_TRANSCRIPTION_BACKEND
+                else resolved_backend
             ),
         ),
     )
