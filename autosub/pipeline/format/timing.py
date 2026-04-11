@@ -10,6 +10,7 @@ class SegmentMS:
         self.text = line.text
         self.speaker = line.speaker
         self.role = line.role
+        self.corner = line.corner
         self.start_ms = int(round(line.start_time * 1000))
         self.end_ms = int(round(line.end_time * 1000))
 
@@ -20,6 +21,7 @@ class SegmentMS:
             end_time=self.end_ms / 1000.0,
             speaker=self.speaker,
             role=self.role,
+            corner=self.corner,
         )
 
 
