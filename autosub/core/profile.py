@@ -72,6 +72,26 @@ def _merge_stage_section(
     return merged
 
 
+def _merge_format_stage(base: dict, override: dict) -> dict:
+    """Merge format stage with special handling for corners segment accumulation."""
+    merged = _merge_stage_section(base, override)
+
+    # Accumulate corners segments from base and override (don't replace)
+    base_segments = (
+        base.get("extensions", {}).get("corners", {}).get("segments", [])
+    )
+    override_segments = (
+        override.get("extensions", {}).get("corners", {}).get("segments", [])
+    )
+    if base_segments or override_segments:
+        merged.setdefault("extensions", {}).setdefault("corners", {})["segments"] = [
+            *base_segments,
+            *override_segments,
+        ]
+
+    return merged
+
+
 def _merge_profiles(
     base: dict[str, dict], override: dict[str, dict]
 ) -> dict[str, dict]:
@@ -79,7 +99,7 @@ def _merge_profiles(
         "transcribe": _merge_stage_section(
             base["transcribe"], override["transcribe"], append_list_keys=("vocab",)
         ),
-        "format": _merge_stage_section(base["format"], override["format"]),
+        "format": _merge_format_stage(base["format"], override["format"]),
         "translate": _merge_stage_section(
             base["translate"], override["translate"], append_list_keys=("prompt",)
         ),
@@ -274,7 +294,14 @@ def _normalize_profile_data(profile_name: str, data: dict) -> dict[str, dict]:
 
     if "corners" in data:
         if isinstance(data["corners"], list):
-            normalized["corners"] = data["corners"]
+            # Auto-convert top-level [[corners]] to format extension config
+            corners_ext = normalized["format"].setdefault("extensions", {}).setdefault(
+                "corners", {}
+            )
+            corners_ext.setdefault("enabled", True)
+            corners_ext.setdefault("engine", "cues")
+            existing_segments = corners_ext.get("segments", [])
+            corners_ext["segments"] = existing_segments + data["corners"]
         else:
             logger.warning(f"'corners' in {profile_name} must be an array of tables.")
 
@@ -307,18 +334,11 @@ def _load_profile_sections(
         return _empty_stage_profile()
 
     combined = _empty_stage_profile()
-    combined_corners: list = []
     for base_profile in data.get("extends", []):
         base_data = _load_profile_sections(base_profile, visited)
         combined = _merge_profiles(combined, base_data)
-        combined_corners.extend(base_data.get("corners", []))
 
     merged = _merge_profiles(combined, _normalize_profile_data(profile_name, data))
-
-    # Corners are top-level, not stage-specific — accumulate from bases and own data
-    own_corners = _normalize_profile_data(profile_name, data).get("corners", [])
-    if combined_corners or own_corners:
-        merged["corners"] = [*combined_corners, *own_corners]
 
     return merged
 
@@ -349,5 +369,5 @@ def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> 
         "extensions": legacy_extensions,
         "glossary": copy.deepcopy(translate_stage.get("glossary", {})),
         "replacements": copy.deepcopy(format_stage.get("replacements", {})),
-        "corners": staged.get("corners", []),
+        "corners": format_stage.get("extensions", {}).get("corners", {}).get("segments", []),
     }

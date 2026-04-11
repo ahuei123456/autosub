@@ -553,8 +553,6 @@ def translate(
         _add_file_logger(translate_log_dir / "run.log")
 
     final_prompt_parts = []
-    final_corner_names = []
-    final_corner_cues = []
     if profile:
         profile_data = load_unified_profile(profile)
         translate_profile = profile_data.get("translate", {})
@@ -562,28 +560,6 @@ def translate(
         glossary_text = _build_glossary_prompt(translate_profile.get("glossary", {}))
         if glossary_text:
             final_prompt_parts.append(glossary_text)
-
-        if profile_data.get("corners"):
-            final_corner_names = [c["name"] for c in profile_data["corners"]]
-            for c in profile_data["corners"]:
-                final_corner_cues.extend(c.get("cues", []))
-            corners_text = "Recurring corners/segments in this program:\n"
-            for corner in profile_data["corners"]:
-                corners_text += f'- {corner["name"]}: {corner["description"]}\n'
-                if corner.get("cues"):
-                    corners_text += f'  Common cue phrases: {", ".join(corner["cues"])}\n'
-            corners_text += (
-                "\nWhen you detect a transition to a new corner/segment, "
-                "prepend [CORNER: <corner name>] to the FIRST translated line of that segment. "
-                "Only mark the transition once per segment, not every line. "
-                "Example: [CORNER: Card Illustrations] Let's take a look at the card illustrations.\n\n"
-                "IMPORTANT: Do NOT mark a corner just because a cue phrase appears in passing. "
-                "The host may mention a segment topic briefly (e.g. previewing what's coming up later) "
-                "without actually transitioning to that segment. Only mark a corner when the overall "
-                "topic genuinely changes and the conversation shifts to that segment's content. "
-                "Look at the surrounding context, not just a single line."
-            )
-            final_prompt_parts.append(corners_text)
 
     if prompt:
         final_prompt_parts.append(prompt)
@@ -628,8 +604,6 @@ def translate(
             reasoning_budget_tokens=vertex_reasoning_budget,
             reasoning_dynamic=vertex_reasoning_dynamic,
             chunk_size=chunk_size,
-            corner_names=final_corner_names or None,
-            corner_cues=final_corner_cues or None,
             debug=mark_chunks,
             retry_chunks=retry_chunk or None,
             log_dir=translate_log_dir,
@@ -907,8 +881,6 @@ def run(
     final_format_extensions = {}
     final_postprocess_extensions = {}
     replacements = {}
-    final_corner_names = []
-    final_corner_cues = []
     profile_speakers_requested = False
     if profile:
         profile_data = load_unified_profile(profile)
@@ -924,28 +896,6 @@ def run(
         glossary_text = _build_glossary_prompt(translate_profile.get("glossary", {}))
         if glossary_text:
             final_prompt_parts.append(glossary_text)
-
-        if profile_data.get("corners"):
-            final_corner_names = [c["name"] for c in profile_data["corners"]]
-            for c in profile_data["corners"]:
-                final_corner_cues.extend(c.get("cues", []))
-            corners_text = "Recurring corners/segments in this program:\n"
-            for corner in profile_data["corners"]:
-                corners_text += f'- {corner["name"]}: {corner["description"]}\n'
-                if corner.get("cues"):
-                    corners_text += f'  Common cue phrases: {", ".join(corner["cues"])}\n'
-            corners_text += (
-                "\nWhen you detect a transition to a new corner/segment, "
-                "prepend [CORNER: <corner name>] to the FIRST translated line of that segment. "
-                "Only mark the transition once per segment, not every line. "
-                "Example: [CORNER: Card Illustrations] Let's take a look at the card illustrations.\n\n"
-                "IMPORTANT: Do NOT mark a corner just because a cue phrase appears in passing. "
-                "The host may mention a segment topic briefly (e.g. previewing what's coming up later) "
-                "without actually transitioning to that segment. Only mark a corner when the overall "
-                "topic genuinely changes and the conversation shifts to that segment's content. "
-                "Look at the surrounding context, not just a single line."
-            )
-            final_prompt_parts.append(corners_text)
 
     if vocab:
         final_vocab.extend(vocab)
@@ -1053,8 +1003,6 @@ def run(
             provider=resolved_provider,
             reasoning_effort=vertex_reasoning_effort,
             chunk_size=chunk_size,
-            corner_names=final_corner_names or None,
-            corner_cues=final_corner_cues or None,
             debug=mark_chunks,
             retry_chunks=retry_chunk or None,
             log_dir=translate_log_dir,

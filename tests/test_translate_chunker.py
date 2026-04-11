@@ -94,7 +94,7 @@ def test_chunk_by_corners_preserves_content():
 # --- make_chunks (integration) ---
 
 
-def test_make_chunks_no_cues_fixed_chunking():
+def test_make_chunks_no_boundaries_fixed_chunking():
     texts = _texts(25)
     chunks, splits = make_chunks(texts, chunk_size=10)
     assert len(chunks) == 3
@@ -102,26 +102,25 @@ def test_make_chunks_no_cues_fixed_chunking():
     assert splits == {10, 20}
 
 
-def test_make_chunks_cues_no_matches_falls_back():
+def test_make_chunks_empty_boundaries_fixed_chunking():
     texts = _texts(25)
-    chunks, splits = make_chunks(texts, chunk_size=10, corner_cues=["zzz_no_match"])
+    chunks, splits = make_chunks(texts, chunk_size=10, corner_boundaries=[])
     assert len(chunks) == 3
     assert [len(c) for c in chunks] == [10, 10, 5]
     assert splits == {10, 20}
 
 
-def test_make_chunks_none_cues_fixed_chunking():
+def test_make_chunks_none_boundaries_fixed_chunking():
     texts = _texts(25)
-    chunks, splits = make_chunks(texts, chunk_size=10, corner_cues=None)
+    chunks, splits = make_chunks(texts, chunk_size=10, corner_boundaries=None)
     assert len(chunks) == 3
     assert splits == {10, 20}
 
 
 def test_make_chunks_corner_aware():
-    # Plant a cue at line 12
     texts = _texts(30)
-    texts[12] = "さあ、カードイラストのコーナーです"
-    chunks, splits = make_chunks(texts, chunk_size=80, corner_cues=["カードイラスト"])
+    # Boundary at index 12
+    chunks, splits = make_chunks(texts, chunk_size=80, corner_boundaries=[12])
     assert len(chunks) == 2
     assert len(chunks[0]) == 12
     assert len(chunks[1]) == 18
@@ -131,8 +130,7 @@ def test_make_chunks_corner_aware():
 
 def test_make_chunks_preserves_all_lines():
     texts = _texts(50)
-    texts[20] = "cue phrase here"
-    chunks, splits = make_chunks(texts, chunk_size=80, corner_cues=["cue phrase"])
+    chunks, splits = make_chunks(texts, chunk_size=80, corner_boundaries=[20])
     flat = [item for chunk in chunks for item in chunk]
     assert flat == texts
 
@@ -154,10 +152,9 @@ def test_chunk_by_corners_small_max_chunk_size():
     assert 8 in splits
 
 
-def test_make_chunks_small_chunk_size_with_cues():
+def test_make_chunks_small_chunk_size_with_boundaries():
     texts = _texts(20)
-    texts[8] = "transition cue"
-    chunks, splits = make_chunks(texts, chunk_size=5, corner_cues=["transition cue"])
+    chunks, splits = make_chunks(texts, chunk_size=5, corner_boundaries=[8])
     # boundary at 8 is kept (8 - 0 = 8 >= min(10, 5) = 5)
     flat = [item for chunk in chunks for item in chunk]
     assert flat == texts
@@ -178,8 +175,7 @@ def test_fixed_size_all_boundaries_in_splits():
 def test_corner_aware_no_artificial_splits():
     """Corner boundaries should NOT appear in splits."""
     texts = _texts(40)
-    texts[20] = "corner cue here"
-    chunks, splits = make_chunks(texts, chunk_size=80, corner_cues=["corner cue"])
+    chunks, splits = make_chunks(texts, chunk_size=80, corner_boundaries=[20])
     assert 20 not in splits
     assert splits == set()
 
@@ -187,10 +183,9 @@ def test_corner_aware_no_artificial_splits():
 def test_corner_aware_subsplits_in_splits():
     """Sub-splits of oversized segments ARE in splits."""
     texts = _texts(50)
-    texts[10] = "corner cue here"
     # Corner at 10 → segments [0:10] (10 lines) and [10:50] (40 lines)
     # Second segment oversized with max=15 → sub-splits at 10+15=25, 10+30=40
-    chunks, splits = make_chunks(texts, chunk_size=15, corner_cues=["corner cue"])
+    chunks, splits = make_chunks(texts, chunk_size=15, corner_boundaries=[10])
     assert 10 not in splits  # corner boundary, not artificial
     assert 25 in splits
     assert 40 in splits

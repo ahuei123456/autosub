@@ -54,6 +54,19 @@ def generate_ass_file(lines: List[SubtitleLine], output_path: Path):
             line.speaker if line.speaker else "Default", "Default"
         )
         event_name = line.role or (line.speaker if line.speaker else "")
+
+        if line.corner:
+            pyass_events.append(
+                pyass.Event(
+                    format=pyass.EventFormat.COMMENT,
+                    start=pyass.timedelta(seconds=line.start_time),
+                    end=pyass.timedelta(seconds=line.end_time),
+                    style=assigned_style,
+                    effect="corner",
+                    text=f"=== Corner: {line.corner} ===",
+                )
+            )
+
         pyass_events.append(
             pyass.Event(
                 start=pyass.timedelta(seconds=line.start_time),

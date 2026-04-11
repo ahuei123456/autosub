@@ -1,7 +1,6 @@
 import hashlib
 import json
 import logging
-import re
 import time
 import traceback
 from pathlib import Path
@@ -15,20 +14,54 @@ logger = logging.getLogger(__name__)
 
 
 def _compute_fingerprint(
-    texts: list[str], chunk_size: int, corner_cues: list[str] | None
+    texts: list[str], chunk_size: int, corner_boundaries: list[int] | None
 ) -> str:
     """Hash input texts and chunking config to detect stale checkpoints."""
     h = hashlib.sha256()
     h.update(str(chunk_size).encode())
     h.update(b"\x00")
-    for cue in corner_cues or []:
-        h.update(cue.encode())
+    for b in corner_boundaries or []:
+        h.update(str(b).encode())
         h.update(b"\x00")
     h.update(b"\x01")
     for t in texts:
         h.update(t.encode())
         h.update(b"\x00")
     return h.hexdigest()
+
+
+def _extract_corner_boundaries(
+    all_events: list[pyass.Event],
+    events_to_translate: list[pyass.Event],
+) -> list[int]:
+    """Extract corner boundary indices from Comment events in the ASS script.
+
+    Corner Comment events (effect="corner") are placed by the format-time
+    corners extension. This function maps each corner Comment to the index
+    of the next dialogue event in the translate list, giving the chunker
+    pre-computed boundary positions.
+    """
+    translate_set = set(id(e) for e in events_to_translate)
+    boundaries: list[int] = []
+    pending_corner = False
+    dialogue_idx = 0
+
+    for event in all_events:
+        if (
+            isinstance(event, pyass.Event)
+            and event.format == pyass.EventFormat.COMMENT
+            and event.effect == "corner"
+        ):
+            pending_corner = True
+            continue
+
+        if id(event) in translate_set:
+            if pending_corner:
+                boundaries.append(dialogue_idx)
+                pending_corner = False
+            dialogue_idx += 1
+
+    return boundaries
 
 
 def translate_subtitles(
@@ -46,8 +79,6 @@ def translate_subtitles(
     reasoning_budget_tokens: int | None = None,
     reasoning_dynamic: bool | None = None,
     chunk_size: int = 0,
-    corner_names: list[str] | None = None,
-    corner_cues: list[str] | None = None,
     debug: bool = False,
     retry_chunks: list[int] | None = None,
     log_dir: Path | None = None,
@@ -55,22 +86,8 @@ def translate_subtitles(
     """
     Reads an original .ass file, translates the dialogue events, and outputs a new .ass file.
 
-    Args:
-        input_ass_path: Path to the original (e.g., Japanese) .ass file.
-        output_ass_path: Path to save the translated .ass file.
-        engine: Translation engine ('vertex' or 'cloud-v3').
-        system_prompt: Optional instructions for the LLM.
-        target_lang: Language code to translate to.
-        source_lang: Original language code.
-        bilingual: If True, keep the original text above the translated text. If False, replace completely.
-        model: Vertex model name for LLM translation.
-        location: Vertex region for LLM translation.
-        reasoning_effort: Provider-agnostic reasoning effort for LLM translation.
-        reasoning_budget_tokens: Optional token-budget override for LLM reasoning.
-        reasoning_dynamic: Whether to request dynamic reasoning budget when supported.
-        chunk_size: If > 0, split into chunks of this size.
-        corner_names: Valid corner names from the profile. If set, only these are accepted as markers.
-        corner_cues: Corner cue phrases from the profile for intelligent chunk boundary detection.
+    Corner boundaries are automatically extracted from Comment events with
+    effect="corner" in the input ASS (placed by the corners format extension).
     """
     logger.info(f"Loading '{input_ass_path}' for translation...")
 
@@ -148,12 +165,19 @@ def translate_subtitles(
         error_path.unlink()
         logger.info("Removed previous translation error file.")
 
+    # Extract corner boundaries from Comment events placed by format-time extension
+    corner_boundaries = _extract_corner_boundaries(script.events, events_to_translate)
+    if corner_boundaries:
+        logger.info(
+            f"Found {len(corner_boundaries)} corner boundaries at dialogue indices {corner_boundaries}"
+        )
+
     splits: set[int] = set()
     try:
         if chunk_size > 0:
             translated_texts, splits = _translate_chunked(
                 translator, texts_to_translate, chunk_size, checkpoint_path,
-                corner_cues=corner_cues,
+                corner_boundaries=corner_boundaries or None,
                 retry_chunks=retry_chunks,
                 log_dir=log_dir,
             )
@@ -176,16 +200,11 @@ def translate_subtitles(
 
     logger.info("Applying translations to subtitle events...")
 
-    # Parse corner markers and build the final event list
-    corner_marker_re = re.compile(r"^\[CORNER:\s*(.+?)\]\s*")
     new_events: list[pyass.Event] = []
     translated_event_set = set(id(e) for e in events_to_translate)
 
-    # Walk all events in order, preserving non-translated events (e.g. Comments)
-    # in place while applying translations and inserting corner markers.
-    valid_corners = set(corner_names) if corner_names else None
-    corners_found: list[str] = []
-    last_corner: str | None = None
+    # Walk all events in order, preserving non-translated events (e.g. corner Comments)
+    # in place while applying translations.
     event_idx = 0
     for event in script.events:
         if id(event) not in translated_event_set:
@@ -211,40 +230,8 @@ def translate_subtitles(
 
         event_idx += 1
 
-        # Check for corner marker in translation
-        corner_match = corner_marker_re.match(translated_text)
-        if corner_match:
-            corner_name = corner_match.group(1)
-            # Always strip the marker tag from the translated text
-            translated_text = translated_text[corner_match.end():]
-
-            # Skip if not a profile-defined corner
-            if valid_corners and corner_name not in valid_corners:
-                logger.debug(f"  Ignoring unknown corner at line {event_idx}: {corner_name}")
-            # Skip consecutive duplicate (e.g. chunk boundary re-detection)
-            elif corner_name == last_corner:
-                logger.debug(f"  Skipping duplicate corner at line {event_idx}: {corner_name}")
-            else:
-                comment = pyass.Event(
-                    format=pyass.EventFormat.COMMENT,
-                    start=event.start,
-                    end=event.end,
-                    style=event.style,
-                    effect="",
-                    text=f"=== Corner: {corner_name} ===",
-                )
-                new_events.append(comment)
-                corners_found.append(corner_name)
-                last_corner = corner_name
-                logger.info(f"  Corner detected at line {event_idx}: {corner_name}")
-
         # Update the event with the new text
         if bilingual:
-            # Create a stacked visual format: Original (small/translucent) on top, Translated (large) on bottom
-            # Formatting uses standard ASS override tags
-            # Since Pyass parses parts, we assign a new EventText part containing our constructed string.
-            # Technically, Pyass will treat override tags as standard text if we don't parse them,
-            # but Aegisub/video players handle raw string output perfectly fine.
             event.text = f"{{\\\\fs24\\\\a6}}{original_text}{{\\\\N}}{{\\\\fs48\\\\a2}}{translated_text}"
         else:
             event.text = translated_text
@@ -252,11 +239,6 @@ def translate_subtitles(
         new_events.append(event)
 
     script.events = new_events
-
-    if corners_found:
-        logger.info(
-            f"Inserted {len(corners_found)} corner marker(s): {', '.join(corners_found)}"
-        )
 
     logger.info(f"Writing translated .ass file to {output_ass_path}...")
     with open(output_ass_path, "w", encoding="utf-8") as f:
@@ -357,13 +339,13 @@ def _translate_chunked(
     texts: list[str],
     chunk_size: int,
     checkpoint_path: Path,
-    corner_cues: list[str] | None = None,
+    corner_boundaries: list[int] | None = None,
     retry_chunks: list[int] | None = None,
     log_dir: Path | None = None,
 ) -> tuple[list[str], set[int]]:
     """Split texts into chunks, translate each once, and merge results."""
-    chunks, splits = make_chunks(texts, chunk_size, corner_cues=corner_cues)
-    fingerprint = _compute_fingerprint(texts, chunk_size, corner_cues)
+    chunks, splits = make_chunks(texts, chunk_size, corner_boundaries=corner_boundaries)
+    fingerprint = _compute_fingerprint(texts, chunk_size, corner_boundaries)
 
     # Set up structured log directory
     chunks_dir = None

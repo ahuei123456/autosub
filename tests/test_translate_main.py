@@ -172,7 +172,7 @@ def test_chunked_resumes_from_checkpoint(tmp_path):
     """Simulate a previous run that completed chunks 0 and 1, then resume."""
     checkpoint_path = tmp_path / "test.checkpoint.json"
     texts = ["a", "b", "c", "d", "e", "f"]
-    fp = _compute_fingerprint(texts, chunk_size=2, corner_cues=None)
+    fp = _compute_fingerprint(texts, chunk_size=2, corner_boundaries=None)
 
     # Pre-populate checkpoint with chunks 0 and 1 already done
     existing = {
@@ -453,7 +453,7 @@ def test_chunked_all_checkpointed_skips_translation(tmp_path):
     """If all chunks are in the checkpoint, no translation calls should be made."""
     checkpoint_path = tmp_path / "test.checkpoint.json"
     texts = ["a", "b", "c", "d"]
-    fp = _compute_fingerprint(texts, chunk_size=2, corner_cues=None)
+    fp = _compute_fingerprint(texts, chunk_size=2, corner_boundaries=None)
 
     existing = {
         0: ["translated:a", "translated:b"],
@@ -490,13 +490,13 @@ def test_load_checkpoint_legacy_format_discarded(tmp_path):
 
 
 def test_fingerprint_changes_with_texts():
-    fp1 = _compute_fingerprint(["a", "b", "c"], chunk_size=2, corner_cues=None)
-    fp2 = _compute_fingerprint(["b", "c"], chunk_size=2, corner_cues=None)
+    fp1 = _compute_fingerprint(["a", "b", "c"], chunk_size=2, corner_boundaries=None)
+    fp2 = _compute_fingerprint(["b", "c"], chunk_size=2, corner_boundaries=None)
     assert fp1 != fp2
 
 
 def test_fingerprint_changes_with_chunk_size():
     texts = ["a", "b", "c", "d"]
-    fp1 = _compute_fingerprint(texts, chunk_size=2, corner_cues=None)
-    fp2 = _compute_fingerprint(texts, chunk_size=3, corner_cues=None)
+    fp1 = _compute_fingerprint(texts, chunk_size=2, corner_boundaries=None)
+    fp2 = _compute_fingerprint(texts, chunk_size=3, corner_boundaries=None)
     assert fp1 != fp2

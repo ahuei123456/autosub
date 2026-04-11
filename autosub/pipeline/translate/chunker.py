@@ -8,27 +8,25 @@ MIN_CHUNK_SIZE = 10  # minimum lines per chunk for corner-aware splitting
 def make_chunks(
     texts: list[str],
     chunk_size: int,
-    corner_cues: list[str] | None = None,
+    corner_boundaries: list[int] | None = None,
 ) -> tuple[list[list[str]], set[int]]:
     """Split texts into chunks for translation.
 
-    If corner_cues are provided, attempts to split at lines containing cue
-    phrases so that segment transitions don't land at chunk boundaries.
-    Falls back to fixed-size chunking when no cues or no matches are found.
+    If corner_boundaries are provided (indices where corner transitions occur),
+    splits at those boundaries so that segment transitions don't land mid-chunk.
+    Falls back to fixed-size chunking when no boundaries are given.
 
     Returns (chunks, splits) where splits is a set of line indices in the
     original texts array where artificial (non-corner) boundaries occurred.
     """
-    if corner_cues:
-        boundaries = _find_corner_boundaries(texts, corner_cues)
-        if boundaries:
-            chunks, splits = _chunk_by_corners(texts, boundaries, chunk_size)
-            chunk_sizes = [len(c) for c in chunks]
-            logger.info(
-                f"Corner-aware chunking: {len(boundaries)} boundaries found at lines "
-                f"{boundaries}, producing {len(chunks)} chunks of sizes {chunk_sizes}"
-            )
-            return chunks, splits
+    if corner_boundaries:
+        chunks, splits = _chunk_by_corners(texts, corner_boundaries, chunk_size)
+        chunk_sizes = [len(c) for c in chunks]
+        logger.info(
+            f"Corner-aware chunking: {len(corner_boundaries)} boundaries found at lines "
+            f"{corner_boundaries}, producing {len(chunks)} chunks of sizes {chunk_sizes}"
+        )
+        return chunks, splits
 
     splits = {i for i in range(chunk_size, len(texts), chunk_size)}
     return [texts[i : i + chunk_size] for i in range(0, len(texts), chunk_size)], splits
