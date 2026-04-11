@@ -30,10 +30,18 @@ def apply_corners(
         logger.warning("Corners extension enabled but no segments defined.")
         return lines
 
+    # Log segment configuration
+    for seg in segments:
+        cues = seg.get("cues", [])
+        logger.info(
+            f"  Segment '{seg['name']}': {len(cues)} cues"
+            + (f" [{', '.join(cues[:3])}{'...' if len(cues) > 3 else ''}]" if cues else "")
+        )
+
     # Deterministic cue-based detection
     cue_corners = _detect_by_cues(lines, segments)
 
-    engine = str(config.get("engine", "cues")).lower()
+    engine = str(config.get("engine", "hybrid")).lower()
     if engine in {"llm", "hybrid"}:
         vertex_config = dict(config)
         vertex_config.setdefault("project_id", PROJECT_ID)
@@ -43,6 +51,11 @@ def apply_corners(
             )
 
             llm_corners = classify_corners_with_vertex(lines, segments, vertex_config)
+            llm_detected = [(i, c) for i, c in enumerate(llm_corners) if c]
+            if llm_detected:
+                logger.info(f"  LLM detected {len(llm_detected)} transition(s):")
+                for i, name in llm_detected:
+                    logger.info(f"    Line {i}: {name}")
             # Merge: LLM takes precedence, cue fills gaps
             resolved_corners = _merge_detections(cue_corners, llm_corners)
         except VertexError:
@@ -98,7 +111,14 @@ def _detect_by_cues(
         for cue, name in cue_map:
             if cue in line.text:
                 results[i] = name
+                logger.debug(f"  Cue match at line {i}: '{cue}' → {name}")
                 break
+
+    matched_names = {r for r in results if r is not None}
+    all_names = {seg["name"] for seg in segments}
+    unmatched = all_names - matched_names
+    if unmatched:
+        logger.info(f"  No cue matches for: {', '.join(sorted(unmatched))}")
 
     return results
 

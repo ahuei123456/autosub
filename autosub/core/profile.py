@@ -299,7 +299,7 @@ def _normalize_profile_data(profile_name: str, data: dict) -> dict[str, dict]:
                 "corners", {}
             )
             corners_ext.setdefault("enabled", True)
-            corners_ext.setdefault("engine", "cues")
+            corners_ext.setdefault("engine", "hybrid")
             existing_segments = corners_ext.get("segments", [])
             corners_ext["segments"] = existing_segments + data["corners"]
         else:

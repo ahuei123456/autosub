@@ -61,7 +61,7 @@ def _apply_combined_extensions(
         )
     except VertexError:
         radio_engine = str(radio_config.get("engine", "rules")).lower()
-        corners_engine = str(corners_config.get("engine", "cues")).lower()
+        corners_engine = str(corners_config.get("engine", "hybrid")).lower()
         if radio_engine == "vertex" or corners_engine == "llm":
             raise
         logger.warning(
@@ -176,7 +176,7 @@ def format_subtitles(
 
     corners_config = extensions_config.get("corners", {})
     if corners_config.get("enabled"):
-        corners_engine = str(corners_config.get("engine", "cues")).lower()
+        corners_engine = str(corners_config.get("engine", "hybrid")).lower()
         radio_engine = str(radio_discourse_config.get("engine", "rules")).lower()
 
         # Combined LLM path: both extensions want LLM classification
