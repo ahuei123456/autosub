@@ -6,14 +6,14 @@ Automatic Japanese subtitle generation and translation pipeline for speech-heavy
 
 `autosub` currently runs a four-stage CLI pipeline:
 
-1. **Transcribe**: Extract audio, send it to the selected transcription backend (`chirp_2` by default, optional local `whisperx`), and write a word-timed `transcript.json`.
+1. **Transcribe**: Extract audio, send it to the selected transcription backend (`chirp_2` by default, `chirp_3` for Chirp 3, or local `whisperx`), and write a word-timed `transcript.json`.
 2. **Format**: Chunk words into subtitle lines, optionally apply discourse-aware radio segmentation, apply timing and optional keyframe snapping, and write `original.ass`.
 3. **Translate**: Translate subtitle events with either Vertex AI (`gemini-3-flash-preview`) or Cloud Translation v3, then write `translated.ass`.
 4. **Postprocess**: Apply profile-driven editorial cleanup to the translated `.ass` file. The built-in `run` command includes this step automatically.
 
 ```mermaid
 graph TD
-    A[Video or Audio Input] --> B[Transcribe<br/>chirp_2 or WhisperX]
+    A[Video or Audio Input] --> B[Transcribe<br/>chirp_2, chirp_3, or WhisperX]
     B --> C[Format<br/>Chunking + Timing + Optional Keyframe Snapping]
     C --> D[Translate<br/>Vertex Gemini 3 Flash or Cloud Translation v3]
     D --> E[Postprocess<br/>Profile Extensions]
@@ -34,7 +34,7 @@ graph TD
 
 - The CLI is still documented and exposed as a **single-speaker** pipeline by default.
 - The transcript and formatter can preserve `speaker` labels if they are already present in `transcript.json`, and `.ass` generation will create per-speaker styles, but diarization is not wired through the transcription commands yet.
-- WhisperX is an alternate backend, not a parity backend for `chirp_2`; vocabulary hints, runtime characteristics, and recognition quality can differ.
+- WhisperX is an alternate backend, not a parity backend for `chirp_2` or `chirp_3`; vocabulary hints, runtime characteristics, and recognition quality can differ.
 - The formatter does **not** currently insert ASS line breaks (`\N`). Layout helpers exist in the codebase, but profile options such as `max_line_width` and `max_lines_per_subtitle` are not currently consumed by the CLI pipeline.
 
 ## Prerequisites
@@ -110,7 +110,7 @@ Notes:
 - `OPENAI_API_KEY` is only needed for `--llm-provider openai`.
 - `OPENROUTER_API_KEY` is only needed for `--llm-provider openrouter`, or when `--model` falls back to OpenRouter because no higher-priority compatible provider is credentialed.
 - `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`, and `AUTOSUB_GCS_BUCKET` are only needed for Google-backed stages.
-- Long-audio transcription only requires Google Cloud Storage when using the default `chirp_2` backend.
+- Long-audio transcription only requires Google Cloud Storage when using the `chirp_2` or `chirp_3` backends.
 
 Set up local-only working files like this:
 
@@ -161,7 +161,13 @@ By default, `run` writes these files next to the input media, named after the vi
 If keyframe extraction is enabled and succeeds, it also writes `<stem>_keyframes.log`.
 If `--save-log` is enabled, it writes `<stem>_autosub.log`.
 
-Use WhisperX instead of Chirp 2:
+Use Chirp 3 instead of Chirp 2:
+
+```powershell
+uv run autosub transcribe .\video.mp4 --backend chirp_3
+```
+
+Use WhisperX instead of Chirp:
 
 ```powershell
 uv run autosub transcribe .\video.mp4 `
@@ -347,7 +353,7 @@ Tracked example prompt fragments live in [`prompts/examples`](./prompts/examples
 
 - `--out`, `-o`: Output transcript path. Default: `transcript.json`
 - `--language`, `-l`: Speech recognition language code. Default: `ja-JP`
-- `--backend` / `--transcription-backend`: `chirp_2` or `whisperx`
+- `--backend` / `--transcription-backend`: `chirp_2`, `chirp_3`, or `whisperx`
 - `--vocab`, `-v`: Additional speech adaptation hints. Can be passed multiple times.
 - `--profile`: Loads `[transcribe].vocab`.
 - `--whisper-model`: WhisperX model name when `--backend whisperx` is selected
@@ -364,9 +370,11 @@ Behavior notes:
 - Audio shorter than about 60 seconds is sent directly to the API.
 - Longer audio is uploaded to GCS first and transcribed as a batch job.
 - WhisperX runs locally on the extracted segment audio and does not use GCS.
-- `--vocab` and profile vocabulary currently only affect `chirp_2`; WhisperX ignores them.
+- `--vocab` and profile vocabulary currently only affect `chirp_2`; `chirp_3` and WhisperX ignore them.
+- `chirp_3` requires Opus-encoded audio (handled automatically) and splits long audio into 18-minute chunks to stay within the word-timestamp limit.
+- `chirp_3` may return bogus word timestamps at internal chunk boundaries; these are automatically clamped before subtitle timing is applied.
 - Repeated `--start` and `--end` flags are grouped by position, so `--start 0 --start 15 --end 5 --end 20` transcribes `0-5` and `15-20`.
-- When multiple ranges are provided, segment transcription requests are merged back into original video timestamps. `chirp_2` ranges run concurrently; WhisperX ranges currently run one at a time to avoid repeated heavy local model loads.
+- When multiple ranges are provided, segment transcription requests are merged back into original video timestamps. Chirp ranges run concurrently; WhisperX ranges currently run one at a time to avoid repeated heavy local model loads.
 
 ### `autosub format`
 
