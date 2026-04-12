@@ -52,6 +52,10 @@ def _extract_corner_boundaries(
             and event.format == pyass.EventFormat.COMMENT
             and event.effect == "corner"
         ):
+            # A corner annotation attaches to the *next* translatable dialogue
+            # event, not necessarily the immediately following event. This
+            # handles intervening non-translatable Comments (e.g. chunk markers)
+            # that may appear between the corner Comment and its target dialogue.
             pending_corner = True
             continue
 

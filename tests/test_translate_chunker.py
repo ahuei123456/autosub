@@ -1,6 +1,5 @@
 from autosub.pipeline.translate.chunker import (
     make_chunks,
-    _find_corner_boundaries,
     _chunk_by_corners,
     MIN_CHUNK_SIZE,
 )
@@ -9,25 +8,6 @@ from autosub.pipeline.translate.chunker import (
 def _texts(n):
     """Generate n dummy subtitle lines."""
     return [f"line {i}" for i in range(n)]
-
-
-# --- _find_corner_boundaries ---
-
-
-def test_find_boundaries_basic():
-    texts = ["hello", "welcome to the corner", "more text", "another cue here"]
-    boundaries = _find_corner_boundaries(texts, ["corner", "cue"])
-    assert boundaries == [1, 3]
-
-
-def test_find_boundaries_no_matches():
-    texts = ["hello", "world", "foo"]
-    assert _find_corner_boundaries(texts, ["zzz"]) == []
-
-
-def test_find_boundaries_multiple_cues_same_line():
-    texts = ["this has cue1 and cue2"]
-    assert _find_corner_boundaries(texts, ["cue1", "cue2"]) == [0]
 
 
 # --- _chunk_by_corners ---

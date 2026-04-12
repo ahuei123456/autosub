@@ -9,6 +9,20 @@ from autosub.pipeline.format.timing import apply_timing_rules
 
 logger = logging.getLogger(__name__)
 
+VALID_ENGINES: dict[str, set[str]] = {
+    "radio_discourse": {"rules", "llm", "hybrid"},
+    "corners": {"cues", "llm", "hybrid"},
+}
+
+
+def _validate_engine(engine: str, extension: str, valid: set[str]) -> None:
+    if engine not in valid:
+        logger.warning(
+            f"Unknown engine '{engine}' for {extension} extension. "
+            f"Supported values: {', '.join(sorted(valid))}. "
+            f"Falling back to deterministic-only mode."
+        )
+
 
 def _apply_combined_extensions(
     lines: list[SubtitleLine],
@@ -20,40 +34,41 @@ def _apply_combined_extensions(
     from autosub.core.config import PROJECT_ID
     from autosub.core.errors import VertexError
     from autosub.extensions.combined_classifier import classify_combined
-    from autosub.extensions.corners.main import _dedup_consecutive, _detect_by_cues
+    from autosub.extensions.corners.main import dedup_consecutive, detect_by_cues
     from autosub.extensions.radio_discourse.main import (
-        _classify_role,
-        _split_host_meta_suffix,
+        classify_role,
+        split_host_meta_suffix,
     )
 
-    # Pre-process: split framing phrases (radio_discourse step)
     processed: list[SubtitleLine] = []
     if radio_config.get("split_framing_phrases", True):
         for line in lines:
-            processed.extend(_split_host_meta_suffix(line))
+            processed.extend(split_host_meta_suffix(line))
     else:
         processed = list(lines)
 
-    # Rules-based fallback roles
     fallback_roles: list[str | None] = []
     previous_role: str | None = None
     for line in processed:
-        role = _classify_role(line.text, previous_role)
+        role = classify_role(line.text, previous_role)
         fallback_roles.append(role)
         previous_role = role
 
-    # Cue-based fallback corners
     segments = corners_config.get("segments", [])
-    cue_corners = _detect_by_cues(processed, segments)
+    cue_corners = detect_by_cues(processed, segments)
 
-    # Combined LLM call
+    # Build combined config: start from radio_config, then layer in corners
+    # settings as fallbacks so corners-specific LLM config takes effect when
+    # radio_discourse doesn't specify a given setting.
     combined_config = dict(radio_config)
+    for key in ("model", "location", "provider", "reasoning_effort",
+                "reasoning_budget_tokens", "reasoning_dynamic", "provider_options"):
+        if key not in combined_config and key in corners_config:
+            combined_config[key] = corners_config[key]
     combined_config.setdefault("project_id", PROJECT_ID)
     llm_trace_path = output_ass_path.with_suffix(".llm_trace.jsonl")
     combined_config.setdefault("llm_trace_path", llm_trace_path)
-    if llm_trace_path.exists():
-        llm_trace_path.unlink()
-        logger.info("Removed previous LLM trace file.")
+    llm_trace_path.unlink(missing_ok=True)
 
     try:
         roles, corners = classify_combined(
@@ -62,7 +77,7 @@ def _apply_combined_extensions(
     except VertexError:
         radio_engine = str(radio_config.get("engine", "rules")).lower()
         corners_engine = str(corners_config.get("engine", "hybrid")).lower()
-        if radio_engine == "vertex" or corners_engine == "llm":
+        if radio_engine == "llm" or corners_engine == "llm":
             raise
         logger.warning(
             "Combined classification failed; falling back to rules + cues.",
@@ -75,9 +90,8 @@ def _apply_combined_extensions(
     merged_corners: list[str | None] = []
     for llm_c, cue_c in zip(corners, cue_corners, strict=False):
         merged_corners.append(llm_c if llm_c is not None else cue_c)
-    merged_corners = _dedup_consecutive(merged_corners)
+    merged_corners = dedup_consecutive(merged_corners)
 
-    # Build result
     label_roles = radio_config.get("label_roles", True)
     result: list[SubtitleLine] = []
     for line, role, corner in zip(processed, roles, merged_corners, strict=False):
@@ -156,35 +170,40 @@ def format_subtitles(
         extensions_config = {}
 
     radio_discourse_config = extensions_config.get("radio_discourse", {})
-    if radio_discourse_config.get("enabled"):
+    corners_config = extensions_config.get("corners", {})
+
+    # Determine whether the combined path will run, so we can skip
+    # the standalone radio_discourse call and avoid a wasted LLM pass.
+    radio_enabled = radio_discourse_config.get("enabled", False)
+    corners_enabled = corners_config.get("enabled", False)
+    radio_engine = str(radio_discourse_config.get("engine", "rules")).lower()
+    corners_engine = str(corners_config.get("engine", "hybrid")).lower()
+
+    _validate_engine(radio_engine, "radio_discourse", VALID_ENGINES["radio_discourse"])
+    _validate_engine(corners_engine, "corners", VALID_ENGINES["corners"])
+
+    use_combined = (
+        radio_enabled
+        and corners_enabled
+        and radio_engine in {"llm", "hybrid"}
+        and corners_engine in {"llm", "hybrid"}
+    )
+
+    if radio_enabled and not use_combined:
         logger.info("Applying radio discourse extension...")
         from autosub.extensions.radio_discourse.main import apply_radio_discourse
 
-        if str(radio_discourse_config.get("engine", "rules")).lower() in {
-            "vertex",
-            "hybrid",
-        }:
+        if radio_engine in {"llm", "hybrid"}:
             llm_trace_path = output_ass_path.with_suffix(".llm_trace.jsonl")
             radio_discourse_config = dict(radio_discourse_config)
             radio_discourse_config.setdefault("llm_trace_path", llm_trace_path)
-            if llm_trace_path.exists():
-                llm_trace_path.unlink()
-                logger.info("Removed previous LLM trace file.")
+            llm_trace_path.unlink(missing_ok=True)
 
         lines = apply_radio_discourse(lines, radio_discourse_config)
         logger.info(f"Radio discourse extension produced {len(lines)} subtitle lines.")
 
-    corners_config = extensions_config.get("corners", {})
-    if corners_config.get("enabled"):
-        corners_engine = str(corners_config.get("engine", "hybrid")).lower()
-        radio_engine = str(radio_discourse_config.get("engine", "rules")).lower()
-
-        # Combined LLM path: both extensions want LLM classification
-        if (
-            radio_discourse_config.get("enabled")
-            and radio_engine in {"vertex", "hybrid"}
-            and corners_engine in {"llm", "hybrid"}
-        ):
+    if corners_enabled:
+        if use_combined:
             logger.info("Running combined radio discourse + corners classification...")
             lines = _apply_combined_extensions(
                 lines, radio_discourse_config, corners_config, output_ass_path
@@ -195,11 +214,10 @@ def format_subtitles(
             from autosub.extensions.corners.main import apply_corners
 
             if corners_engine in {"llm", "hybrid"}:
+                llm_trace_path = output_ass_path.with_suffix(".llm_trace.jsonl")
+                llm_trace_path.unlink(missing_ok=True)
                 corners_config = dict(corners_config)
-                corners_config.setdefault(
-                    "llm_trace_path",
-                    output_ass_path.with_suffix(".llm_trace.jsonl"),
-                )
+                corners_config.setdefault("llm_trace_path", llm_trace_path)
 
             lines = apply_corners(lines, corners_config)
             detected = sum(1 for line in lines if line.corner)

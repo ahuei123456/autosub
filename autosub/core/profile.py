@@ -62,7 +62,6 @@ def _empty_stage_profile() -> dict[str, dict]:
     }
 
 
-
 def _merge_stage_section(
     base: dict, override: dict, *, append_list_keys: tuple[str, ...] = ()
 ) -> dict:

@@ -14,10 +14,11 @@ def apply_corners(
 ) -> list[SubtitleLine]:
     """Detect corner/segment transitions and mark the first line of each new segment.
 
-    Supports three engines:
-    - "cues" (default): deterministic cue-phrase matching
-    - "llm": LLM-based detection via VertexCornerClassifier
-    - "hybrid": LLM with cue-based fallback on failure
+    Supports these engines:
+    - "cues": deterministic cue-phrase matching only
+    - "llm": LLM-based detection (raises on failure)
+    - "hybrid" (default): LLM with cue-based fallback on failure
+
     """
     if not lines:
         return []
@@ -39,18 +40,18 @@ def apply_corners(
         )
 
     # Deterministic cue-based detection
-    cue_corners = _detect_by_cues(lines, segments)
+    cue_corners = detect_by_cues(lines, segments)
 
     engine = str(config.get("engine", "hybrid")).lower()
     if engine in {"llm", "hybrid"}:
-        vertex_config = dict(config)
-        vertex_config.setdefault("project_id", PROJECT_ID)
+        llm_config = dict(config)
+        llm_config.setdefault("project_id", PROJECT_ID)
         try:
             from autosub.extensions.corners.classifier import (
                 classify_corners_with_vertex,
             )
 
-            llm_corners = classify_corners_with_vertex(lines, segments, vertex_config)
+            llm_corners = classify_corners_with_vertex(lines, segments, llm_config)
             llm_detected = [(i, c) for i, c in enumerate(llm_corners) if c]
             if llm_detected:
                 logger.info(f"  LLM detected {len(llm_detected)} transition(s):")
@@ -70,7 +71,7 @@ def apply_corners(
         resolved_corners = cue_corners
 
     # Deduplicate consecutive same-corner detections
-    resolved_corners = _dedup_consecutive(resolved_corners)
+    resolved_corners = dedup_consecutive(resolved_corners)
 
     result: list[SubtitleLine] = []
     for line, corner in zip(lines, resolved_corners, strict=False):
@@ -92,7 +93,7 @@ def apply_corners(
     return result
 
 
-def _detect_by_cues(
+def detect_by_cues(
     lines: list[SubtitleLine], segments: list[dict]
 ) -> list[str | None]:
     """Scan lines for cue phrases and return corner names at transition points."""
@@ -133,8 +134,13 @@ def _merge_detections(
     return merged
 
 
-def _dedup_consecutive(corners: list[str | None]) -> list[str | None]:
-    """Remove consecutive duplicate corner names, keeping only the first."""
+def dedup_consecutive(corners: list[str | None]) -> list[str | None]:
+    """Remove consecutive duplicate corner names, keeping only the first.
+
+    Only suppresses truly consecutive repeats. A None gap between two
+    occurrences of the same corner resets tracking, so the second occurrence
+    is preserved (e.g. a show that returns to "Fan Letter" after a "Song").
+    """
     result: list[str | None] = []
     last_corner: str | None = None
     for corner in corners:
@@ -142,6 +148,5 @@ def _dedup_consecutive(corners: list[str | None]) -> list[str | None]:
             result.append(None)
         else:
             result.append(corner)
-            if corner is not None:
-                last_corner = corner
+            last_corner = corner
     return result

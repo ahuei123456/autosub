@@ -73,30 +73,30 @@ def apply_radio_discourse(
     processed_lines: list[SubtitleLine] = []
     for line in lines:
         if config.get("split_framing_phrases", True):
-            processed_lines.extend(_split_host_meta_suffix(line))
+            processed_lines.extend(split_host_meta_suffix(line))
         else:
             processed_lines.append(line)
 
     fallback_roles: list[str | None] = []
     previous_role: str | None = None
     for line in processed_lines:
-        role = _classify_role(line.text, previous_role)
+        role = classify_role(line.text, previous_role)
         fallback_roles.append(role)
         previous_role = role
 
     engine = str(config.get("engine", "rules")).lower()
     resolved_roles = fallback_roles
-    if engine in {"vertex", "hybrid"}:
-        vertex_config = dict(config)
-        vertex_config.setdefault("project_id", PROJECT_ID)
+    if engine in {"llm", "hybrid"}:
+        llm_config = dict(config)
+        llm_config.setdefault("project_id", PROJECT_ID)
         try:
             resolved_roles = classify_roles_with_vertex(
                 processed_lines,
                 fallback_roles,
-                vertex_config,
+                llm_config,
             )
         except VertexError:
-            if engine == "vertex":
+            if engine == "llm":
                 raise
             logger.warning(
                 "Vertex radio discourse classification failed; falling back to rules.",
@@ -119,7 +119,7 @@ def apply_radio_discourse(
     return classified_lines
 
 
-def _split_host_meta_suffix(line: SubtitleLine) -> list[SubtitleLine]:
+def split_host_meta_suffix(line: SubtitleLine) -> list[SubtitleLine]:
     text = line.text.strip()
     for suffix in HOST_META_SUFFIXES:
         if not text.endswith(suffix):
@@ -168,7 +168,7 @@ def _split_host_meta_suffix(line: SubtitleLine) -> list[SubtitleLine]:
     return [line]
 
 
-def _classify_role(text: str, previous_role: str | None) -> str | None:
+def classify_role(text: str, previous_role: str | None) -> str | None:
     stripped = text.strip()
     if not stripped:
         return previous_role

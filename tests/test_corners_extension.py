@@ -3,8 +3,8 @@
 from autosub.core.schemas import SubtitleLine
 from autosub.extensions.corners.main import (
     apply_corners,
-    _detect_by_cues,
-    _dedup_consecutive,
+    detect_by_cues,
+    dedup_consecutive,
     _merge_detections,
 )
 
@@ -19,51 +19,63 @@ SEGMENTS = [
 ]
 
 
-# --- _detect_by_cues ---
+# --- detect_by_cues ---
 
 
-def test_detect_by_cues_basic():
+def testdetect_by_cues_basic():
     lines = [
         _line("今日もよろしく"),
         _line("お便りをいただきました"),
         _line("ありがとう"),
         _line("曲のコーナーです"),
     ]
-    result = _detect_by_cues(lines, SEGMENTS)
+    result = detect_by_cues(lines, SEGMENTS)
     assert result == [None, "Fan Letter", None, "Song Corner"]
 
 
-def test_detect_by_cues_no_cues():
+def testdetect_by_cues_no_cues():
     lines = [_line("普通の文")]
-    result = _detect_by_cues(lines, [{"name": "X", "description": "No cues"}])
+    result = detect_by_cues(lines, [{"name": "X", "description": "No cues"}])
     assert result == [None]
 
 
-def test_detect_by_cues_empty_segments():
+def testdetect_by_cues_empty_segments():
     lines = [_line("text")]
-    result = _detect_by_cues(lines, [])
+    result = detect_by_cues(lines, [])
     assert result == [None]
 
 
-def test_detect_by_cues_empty_lines():
-    result = _detect_by_cues([], SEGMENTS)
+def testdetect_by_cues_empty_lines():
+    result = detect_by_cues([], SEGMENTS)
     assert result == []
 
 
-# --- _dedup_consecutive ---
+# --- dedup_consecutive ---
 
 
-def test_dedup_consecutive_basic():
+def testdedup_consecutive_basic():
     corners = [None, "A", "A", None, "B", "B", "A"]
-    assert _dedup_consecutive(corners) == [None, "A", None, None, "B", None, "A"]
+    assert dedup_consecutive(corners) == [None, "A", None, None, "B", None, "A"]
 
 
-def test_dedup_consecutive_all_none():
-    assert _dedup_consecutive([None, None]) == [None, None]
+def testdedup_consecutive_all_none():
+    assert dedup_consecutive([None, None]) == [None, None]
 
 
-def test_dedup_consecutive_no_dupes():
-    assert _dedup_consecutive(["A", "B", "A"]) == ["A", "B", "A"]
+def testdedup_consecutive_no_dupes():
+    assert dedup_consecutive(["A", "B", "A"]) == ["A", "B", "A"]
+
+
+def test_dedup_consecutive_same_corner_after_none_gap():
+    """A show that returns to the same corner after a gap should preserve the second occurrence."""
+    corners = ["Fan Letter", None, None, "Fan Letter"]
+    assert dedup_consecutive(corners) == ["Fan Letter", None, None, "Fan Letter"]
+
+
+def test_dedup_consecutive_same_corner_no_gap():
+    """Truly consecutive same-corner should still be deduped."""
+    corners = ["Fan Letter", "Fan Letter", None, "Song"]
+    assert dedup_consecutive(corners) == ["Fan Letter", None, None, "Song"]
 
 
 # --- _merge_detections ---
@@ -118,7 +130,7 @@ def test_apply_corners_preserves_role():
     assert result[0].corner == "Fan Letter"
 
 
-def test_apply_corners_dedup_consecutive():
+def test_apply_cornersdedup_consecutive():
     lines = [
         _line("お便りをいただきました"),
         _line("お便りの続き"),  # Same corner detected again

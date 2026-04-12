@@ -32,15 +32,6 @@ def make_chunks(
     return [texts[i : i + chunk_size] for i in range(0, len(texts), chunk_size)], splits
 
 
-def _find_corner_boundaries(texts: list[str], cues: list[str]) -> list[int]:
-    """Scan texts for corner cue phrases, return indices where segments start."""
-    boundaries = []
-    for i, text in enumerate(texts):
-        if any(cue in text for cue in cues):
-            boundaries.append(i)
-    return boundaries
-
-
 def _chunk_by_corners(
     texts: list[str], boundaries: list[int], max_chunk_size: int
 ) -> tuple[list[list[str]], set[int]]:
