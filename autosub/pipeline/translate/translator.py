@@ -19,6 +19,7 @@ class TranslatedSubtitle(BaseModel):
 class VertexTranslator(BaseTranslator, BaseStructuredLLM):
     DEFAULT_MODELS = {
         "google-vertex": "gemini-3-flash-preview",
+        "anthropic-vertex": "claude-haiku-4-5",
         "anthropic": "claude-haiku-4-5",
         "openai": "gpt-5-mini",
         "openrouter": "openai/gpt-5-mini",

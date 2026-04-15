@@ -25,6 +25,7 @@ class RadioDiscourseDecision(BaseModel):
 class VertexRadioDiscourseClassifier(BaseStructuredLLM):
     DEFAULT_MODELS = {
         "google-vertex": "gemini-3.1-flash-lite-preview",
+        "anthropic-vertex": "claude-haiku-4-5",
         "anthropic": "claude-haiku-4-5",
         "openai": "gpt-5-mini",
     }
@@ -135,7 +136,7 @@ def classify_roles_with_vertex(
 
     provider = config.get("provider", "google-vertex")
     project_id = config.get("project_id")
-    if provider == "google-vertex" and not project_id:
+    if provider in {"google-vertex", "anthropic-vertex"} and not project_id:
         raise ValueError(
             "radio_discourse Vertex mode requires a Google Cloud project id."
         )

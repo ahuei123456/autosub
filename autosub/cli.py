@@ -462,7 +462,7 @@ def translate(
     llm_provider: str = typer.Option(
         "google-vertex",
         "--llm-provider",
-        help="LLM provider to use for the vertex engine ('google-vertex', 'anthropic', 'openai', or 'openrouter').",
+        help="LLM provider to use for the vertex engine ('google-vertex', 'anthropic-vertex', 'anthropic', 'openai', or 'openrouter').",
     ),
     vertex_reasoning_effort: ReasoningEffort | None = typer.Option(
         "medium",
@@ -757,7 +757,7 @@ def run(
     llm_provider: str = typer.Option(
         "google-vertex",
         "--llm-provider",
-        help="LLM provider to use for translation ('google-vertex', 'anthropic', 'openai', or 'openrouter').",
+        help="LLM provider to use for translation ('google-vertex', 'anthropic-vertex', 'anthropic', 'openai', or 'openrouter').",
     ),
     bilingual: bool = typer.Option(
         False, "--bilingual/--replace", help="Include original text on top."

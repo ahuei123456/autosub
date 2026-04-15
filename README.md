@@ -107,6 +107,7 @@ OPENROUTER_API_KEY=your-openrouter-api-key
 Notes:
 
 - `ANTHROPIC_API_KEY` is only needed for `--llm-provider anthropic`.
+- `GOOGLE_CLOUD_PROJECT` is also enough for Claude when you use `--llm-provider anthropic-vertex`.
 - `OPENAI_API_KEY` is only needed for `--llm-provider openai`.
 - `OPENROUTER_API_KEY` is only needed for `--llm-provider openrouter`, or when `--model` falls back to OpenRouter because no higher-priority compatible provider is credentialed.
 - `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`, and `AUTOSUB_GCS_BUCKET` are only needed for Google-backed stages.
@@ -386,12 +387,12 @@ Behavior notes:
 - `--out`: Output `.ass` path. Default: `translated.ass`
 - `--engine`, `-e`: `vertex` or `cloud-v3`
 - `--model`: Preferred LLM selector for the `vertex` engine. Infers provider automatically for Gemini, Claude, and OpenAI model names
-- `--llm-provider`: `google-vertex`, `anthropic`, `openai`, or `openrouter` for the `vertex` engine
+- `--llm-provider`: `google-vertex`, `anthropic-vertex`, `anthropic`, `openai`, or `openrouter` for the `vertex` engine
 - `--prompt`, `-p`: Extra translation guidance appended after profile prompts
 - `--profile`: Loads `[translate]`, including prompt text and glossary entries
 - `--target`: Target language code. Default: `en`
 - `--source`: Source language code. Default: `ja`
-- `--llm-model` / `--vertex-model`: Override the LLM model name. Defaults to `gemini-3-flash-preview` for `google-vertex`, `claude-haiku-4-5` for `anthropic`, `gpt-5-mini` for `openai`, and `openai/gpt-5-mini` for `openrouter`
+- `--llm-model` / `--vertex-model`: Override the LLM model name. Defaults to `gemini-3-flash-preview` for `google-vertex`, `claude-haiku-4-5` for both `anthropic-vertex` and `anthropic`, `gpt-5-mini` for `openai`, and `openai/gpt-5-mini` for `openrouter`
 - `--llm-location` / `--vertex-location`: Override the LLM location or region
 - `--llm-reasoning-effort`: Provider-agnostic reasoning effort for LLM-backed translation. Current support varies by provider and model family and can include `off`, `minimal`, `low`, `medium`, `high`
 - `--llm-reasoning-budget`: Optional token-budget override for provider-specific reasoning controls
@@ -403,12 +404,12 @@ Behavior notes:
 
 Behavior notes:
 
-- `vertex` uses the structured LLM path. The default provider is Vertex AI with `gemini-3-flash-preview`, and direct Anthropic, OpenAI, and OpenRouter are also supported.
+- `vertex` uses the structured LLM path. The default provider is Vertex AI with `gemini-3-flash-preview`, and Vertex-routed Claude, direct Anthropic, OpenAI, and OpenRouter are also supported.
 - `cloud-v3` uses Google Cloud Translation v3 and ignores custom prompt text.
 - The older `--vertex-reasoning-*` spellings still work as legacy aliases, but `--llm-reasoning-*` is the preferred public interface now.
 - `--model` now resolves in two steps: identify a supported model family, then choose a compatible credentialed provider.
 - Supported family shortcuts are currently `gemini-*`, `claude-*`, `gpt-*`, `chatgpt*`, and OpenAI `o`-series names like `o3` or `o4-mini`.
-- When more than one compatible provider is credentialed, autosub prefers direct providers over OpenRouter: `google-vertex`, then `anthropic`, then `openai`, then `openrouter`.
+- When more than one compatible provider is credentialed, autosub prefers `google-vertex`, then `anthropic-vertex`, then `anthropic`, then `openai`, then `openrouter`.
 - `--llm-provider` always overrides automatic provider selection.
 - OpenRouter-native `vendor/model` IDs such as `qwen/qwen3.6-plus:free` are accepted directly. If `OPENROUTER_API_KEY` is available, bare vendor-prefixed model IDs also auto-resolve to OpenRouter.
 - `--model` cannot be combined with `--engine cloud-v3`.
@@ -422,6 +423,13 @@ Anthropic notes:
 - For longer or stricter JSON-heavy translation jobs, `claude-sonnet-4-6` is usually more reliable than Haiku.
 - `--llm-location` is ignored for direct Anthropic requests.
 - Direct Anthropic uses the same `--llm-reasoning-effort` flag as the other providers.
+
+Anthropic Vertex notes:
+
+- `--llm-provider anthropic-vertex` uses Claude through Vertex AI credentials instead of `ANTHROPIC_API_KEY`.
+- `GOOGLE_CLOUD_PROJECT` is required for `anthropic-vertex`, and `--llm-location` controls the Vertex region.
+- When `--llm-provider anthropic-vertex` is selected and `--llm-model` is omitted, the default model is `claude-haiku-4-5`.
+- Claude model shortcuts such as `claude-haiku-4-5` and `claude-sonnet-4-6` can now auto-resolve to `anthropic-vertex` when Google credentials are available but direct Anthropic credentials are not.
 
 Current Anthropic reasoning defaults in this repo:
 
@@ -480,7 +488,7 @@ Behavior notes:
 
 Behavior notes:
 
-- `run` defaults to the Vertex AI translation path, but you can switch to direct Anthropic with `--llm-provider anthropic`.
+- `run` defaults to the Vertex AI translation path, but you can switch to Vertex-routed Claude with `--llm-provider anthropic-vertex` or direct Anthropic with `--llm-provider anthropic`.
 - `run` uses the same model resolution rules as `translate`, including credential-aware fallback to OpenRouter for supported model families.
 - If you need `cloud-v3` or advanced LLM overrides such as model, location, or dynamic reasoning settings, run the stages separately and use `autosub translate`.
 - Repeated `--start` and `--end` flags behave the same as `autosub transcribe`, and the selected transcription segments run concurrently before the downstream stages continue.
@@ -533,7 +541,7 @@ conditional_snap_threshold_ms = 500
 [format.extensions.radio_discourse]
 enabled = true
 engine = "hybrid"
-provider = "anthropic"
+provider = "anthropic-vertex"
 model = "claude-haiku-4-5"
 reasoning_effort = "low"
 scope = "full_script"
@@ -629,8 +637,7 @@ Supported options:
 
 - `enabled`: Turn the extension on
 - `engine`: `rules`, `vertex`, or `hybrid`
-- `provider`: `google-vertex` or `anthropic` for the LLM-backed modes
-- `provider`: `google-vertex`, `anthropic`, or `openai` for the LLM-backed modes
+- `provider`: `google-vertex`, `anthropic-vertex`, `anthropic`, or `openai` for the LLM-backed modes
 - `model`: LLM model name for `vertex` or `hybrid`
 - `reasoning_effort`: Provider-agnostic reasoning effort for LLM-backed classification. Current support varies by provider and model family and can include `off`, `minimal`, `low`, `medium`, `high`
 - `reasoning_budget_tokens`: Optional token-budget override for provider-specific reasoning controls
@@ -653,6 +660,21 @@ engine = "hybrid"
 provider = "anthropic"
 model = "claude-haiku-4-5"
 reasoning_effort = "low"
+scope = "full_script"
+split_framing_phrases = true
+label_roles = true
+```
+
+Vertex-routed Anthropic `radio_discourse` example:
+
+```toml
+[extensions.radio_discourse]
+enabled = true
+engine = "hybrid"
+provider = "anthropic-vertex"
+model = "claude-haiku-4-5"
+reasoning_effort = "low"
+location = "global"
 scope = "full_script"
 split_framing_phrases = true
 label_roles = true

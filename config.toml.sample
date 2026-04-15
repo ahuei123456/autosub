@@ -45,6 +45,7 @@ chunk_size = 0
 # out = "translated.ass"
 # prompt = "Preserve tone and keep subtitle lines compact."
 # profile = "suzuhara_nozomi"
+# llm_provider = "anthropic-vertex"
 # model = "gpt-5-mini"
 # llm_location = "global"
 # reasoning_budget = 8192

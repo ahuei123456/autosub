@@ -22,7 +22,7 @@ from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.run import AgentRunResult
 from pydantic_ai.settings import ModelSettings
 
-from anthropic import AsyncAnthropic
+from anthropic import AsyncAnthropic, AsyncAnthropicVertex
 
 from autosub.core.errors import (
     VertexBlockedResponseError,
@@ -204,6 +204,25 @@ class BaseStructuredLLM:
                 provider=AnthropicProvider(
                     anthropic_client=AsyncAnthropic(
                         api_key=self._require_anthropic_api_key()
+                    )
+                ),
+                settings=cast(
+                    ModelSettings, self._build_anthropic_model_settings(config)
+                ),
+            )
+
+        if config.provider == "anthropic-vertex":
+            if not config.project_id:
+                raise ValueError(
+                    "anthropic-vertex provider requires a Google Cloud project id."
+                )
+
+            return AnthropicModel(
+                config.model,
+                provider=AnthropicProvider(
+                    anthropic_client=AsyncAnthropicVertex(
+                        project_id=config.project_id,
+                        region=config.location,
                     )
                 ),
                 settings=cast(

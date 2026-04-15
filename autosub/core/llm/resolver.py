@@ -7,6 +7,7 @@ LLMProvider = str
 
 SUPPORTED_PROVIDERS: tuple[LLMProvider, ...] = (
     "google-vertex",
+    "anthropic-vertex",
     "anthropic",
     "openai",
     "openrouter",
@@ -14,6 +15,7 @@ SUPPORTED_PROVIDERS: tuple[LLMProvider, ...] = (
 
 PROVIDER_PREFERENCE: tuple[LLMProvider, ...] = (
     "google-vertex",
+    "anthropic-vertex",
     "anthropic",
     "openai",
     "openrouter",
@@ -21,6 +23,7 @@ PROVIDER_PREFERENCE: tuple[LLMProvider, ...] = (
 
 PROVIDER_ENV_VARS: dict[LLMProvider, str] = {
     "google-vertex": "GOOGLE_CLOUD_PROJECT",
+    "anthropic-vertex": "GOOGLE_CLOUD_PROJECT",
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
@@ -172,11 +175,16 @@ def classify_model(model: str) -> ModelClassification | None:
         return None
 
     direct_provider = DIRECT_PROVIDER_BY_FAMILY[direct_family]
+    compatible_providers: tuple[LLMProvider, ...]
+    if direct_family == "claude":
+        compatible_providers = ("anthropic", "anthropic-vertex", "openrouter")
+    else:
+        compatible_providers = (direct_provider, "openrouter")
     return ModelClassification(
         original_model=normalized,
         direct_model=normalized,
         model_family=direct_family,
-        compatible_providers=(direct_provider, "openrouter"),
+        compatible_providers=compatible_providers,
     )
 
 

@@ -126,8 +126,11 @@ def test_load_checkpoint_not_a_dict(tmp_path):
 def test_load_checkpoint_skips_non_integer_keys(tmp_path):
     checkpoint_path = tmp_path / "bad_keys.json"
     import json
-    json.dump({"_fingerprint": "fp", "chunks": {"0": ["a"], "foo": ["b"], "1": ["c"]}},
-              open(checkpoint_path, "w"))
+
+    json.dump(
+        {"_fingerprint": "fp", "chunks": {"0": ["a"], "foo": ["b"], "1": ["c"]}},
+        open(checkpoint_path, "w"),
+    )
     result = _load_checkpoint(checkpoint_path, "fp")
     assert result == {0: ["a"], 1: ["c"]}
 
@@ -135,8 +138,11 @@ def test_load_checkpoint_skips_non_integer_keys(tmp_path):
 def test_load_checkpoint_skips_negative_keys(tmp_path):
     checkpoint_path = tmp_path / "neg.json"
     import json
-    json.dump({"_fingerprint": "fp", "chunks": {"-1": ["a"], "0": ["b"]}},
-              open(checkpoint_path, "w"))
+
+    json.dump(
+        {"_fingerprint": "fp", "chunks": {"-1": ["a"], "0": ["b"]}},
+        open(checkpoint_path, "w"),
+    )
     result = _load_checkpoint(checkpoint_path, "fp")
     assert result == {0: ["b"]}
 
@@ -144,8 +150,11 @@ def test_load_checkpoint_skips_negative_keys(tmp_path):
 def test_load_checkpoint_skips_empty_lists(tmp_path):
     checkpoint_path = tmp_path / "empty.json"
     import json
-    json.dump({"_fingerprint": "fp", "chunks": {"0": ["a"], "1": []}},
-              open(checkpoint_path, "w"))
+
+    json.dump(
+        {"_fingerprint": "fp", "chunks": {"0": ["a"], "1": []}},
+        open(checkpoint_path, "w"),
+    )
     result = _load_checkpoint(checkpoint_path, "fp")
     assert result == {0: ["a"]}
 
@@ -153,8 +162,11 @@ def test_load_checkpoint_skips_empty_lists(tmp_path):
 def test_load_checkpoint_skips_non_list_values(tmp_path):
     checkpoint_path = tmp_path / "bad_vals.json"
     import json
-    json.dump({"_fingerprint": "fp", "chunks": {"0": ["a"], "1": "not a list", "2": 42}},
-              open(checkpoint_path, "w"))
+
+    json.dump(
+        {"_fingerprint": "fp", "chunks": {"0": ["a"], "1": "not a list", "2": 42}},
+        open(checkpoint_path, "w"),
+    )
     result = _load_checkpoint(checkpoint_path, "fp")
     assert result == {0: ["a"]}
 
@@ -162,8 +174,11 @@ def test_load_checkpoint_skips_non_list_values(tmp_path):
 def test_load_checkpoint_skips_non_string_elements(tmp_path):
     checkpoint_path = tmp_path / "bad_elems.json"
     import json
-    json.dump({"_fingerprint": "fp", "chunks": {"0": ["a", "b"], "1": [1, 2]}},
-              open(checkpoint_path, "w"))
+
+    json.dump(
+        {"_fingerprint": "fp", "chunks": {"0": ["a", "b"], "1": [1, 2]}},
+        open(checkpoint_path, "w"),
+    )
     result = _load_checkpoint(checkpoint_path, "fp")
     assert result == {0: ["a", "b"]}
 
@@ -312,6 +327,54 @@ def test_translate_subtitles_allows_anthropic_without_google_project(
     assert captured["model"] is None
 
 
+def test_translate_subtitles_allows_anthropic_vertex_with_google_project(
+    tmp_path, monkeypatch
+):
+    input_ass_path = tmp_path / "original.ass"
+    output_ass_path = tmp_path / "translated.ass"
+    input_ass_path.write_text(
+        "\n".join(
+            [
+                "[Script Info]",
+                "Title: Test",
+                "ScriptType: v4.00+",
+                "",
+                "[V4+ Styles]",
+                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+                "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1",
+                "",
+                "[Events]",
+                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+                "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,こんにちは",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object] = {}
+
+    class FakeVertexTranslator:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def translate(self, texts: list[str]) -> list[str]:
+            return [f"translated:{text}" for text in texts]
+
+    monkeypatch.setattr(translate_main_module, "PROJECT_ID", "test-project")
+    monkeypatch.setattr(translator_module, "VertexTranslator", FakeVertexTranslator)
+
+    translate_subtitles(
+        input_ass_path,
+        output_ass_path,
+        engine="vertex",
+        provider="anthropic-vertex",
+    )
+
+    assert captured["project_id"] == "test-project"
+    assert captured["provider"] == "anthropic-vertex"
+    assert captured["model"] is None
+
+
 def test_translate_subtitles_allows_openai_without_google_project(
     tmp_path, monkeypatch
 ):
@@ -408,6 +471,41 @@ def test_translate_subtitles_allows_openrouter_without_google_project(
     assert captured["model"] is None
 
 
+def test_translate_subtitles_requires_google_project_for_anthropic_vertex(
+    tmp_path, monkeypatch
+):
+    input_ass_path = tmp_path / "original.ass"
+    output_ass_path = tmp_path / "translated.ass"
+    input_ass_path.write_text(
+        "\n".join(
+            [
+                "[Script Info]",
+                "Title: Test",
+                "ScriptType: v4.00+",
+                "",
+                "[V4+ Styles]",
+                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+                "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1",
+                "",
+                "[Events]",
+                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+                "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,こんにちは",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(translate_main_module, "PROJECT_ID", None)
+
+    with pytest.raises(ValueError, match="GOOGLE_CLOUD_PROJECT is not set"):
+        translate_subtitles(
+            input_ass_path,
+            output_ass_path,
+            engine="vertex",
+            provider="anthropic-vertex",
+        )
+
+
 def test_translate_subtitles_writes_error_file_on_failure(tmp_path, monkeypatch):
     input_ass_path = tmp_path / "original.ass"
     output_ass_path = tmp_path / "translated.ass"
@@ -484,6 +582,7 @@ def test_load_checkpoint_legacy_format_discarded(tmp_path):
     """Old-format checkpoint (no _fingerprint) is discarded."""
     checkpoint_path = tmp_path / "legacy.json"
     import json
+
     json.dump({"0": ["a", "b"], "1": ["c"]}, open(checkpoint_path, "w"))
     result = _load_checkpoint(checkpoint_path, "any_fingerprint")
     assert result == {}

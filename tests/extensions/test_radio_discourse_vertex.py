@@ -1,3 +1,5 @@
+import pytest
+
 from autosub.core.errors import VertexRequestError
 from autosub.core.schemas import SubtitleLine
 from autosub.extensions.radio_discourse.main import apply_radio_discourse
@@ -107,6 +109,32 @@ def test_classify_roles_with_vertex_defaults_to_haiku_for_anthropic(monkeypatch)
     assert captured["model"] == "claude-haiku-4-5"
 
 
+def test_classify_roles_with_vertex_defaults_to_haiku_for_anthropic_vertex(
+    monkeypatch,
+):
+    captured: dict[str, str] = {}
+    lines = [SubtitleLine(text="line 0", start_time=0.0, end_time=1.0)]
+
+    def fake_classify_window(self, window):
+        captured["model"] = self.model
+        return {0: "host"}
+
+    monkeypatch.setattr(
+        VertexRadioDiscourseClassifier,
+        "classify_window",
+        fake_classify_window,
+    )
+
+    result = classify_roles_with_vertex(
+        lines,
+        fallback_roles=[None],
+        config={"provider": "anthropic-vertex", "project_id": "test-project"},
+    )
+
+    assert result == ["host"]
+    assert captured["model"] == "claude-haiku-4-5"
+
+
 def test_classify_roles_with_vertex_defaults_to_gpt_5_mini_for_openai(monkeypatch):
     captured: dict[str, str] = {}
     lines = [SubtitleLine(text="line 0", start_time=0.0, end_time=1.0)]
@@ -203,6 +231,17 @@ def test_classify_roles_with_vertex_allows_anthropic_without_project_id(monkeypa
     assert result == ["host"]
     assert captured["provider"] == "anthropic"
     assert captured["project_id"] is None
+
+
+def test_classify_roles_with_vertex_requires_project_id_for_anthropic_vertex():
+    lines = [SubtitleLine(text="line 0", start_time=0.0, end_time=1.0)]
+
+    with pytest.raises(ValueError, match="requires a Google Cloud project id"):
+        classify_roles_with_vertex(
+            lines,
+            fallback_roles=[None],
+            config={"provider": "anthropic-vertex"},
+        )
 
 
 def test_classify_roles_with_vertex_allows_openai_without_project_id(monkeypatch):

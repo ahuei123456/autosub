@@ -45,6 +45,18 @@ def test_resolver_prefers_anthropic_over_openrouter_for_claude_family(monkeypatc
     assert selection.model_family == "claude"
 
 
+def test_resolver_falls_back_to_anthropic_vertex_for_claude_family(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter")
+
+    selection = resolve_llm_selection(model="claude-sonnet-4-6", provider=None)
+
+    assert selection.provider == "anthropic-vertex"
+    assert selection.model == "claude-sonnet-4-6"
+    assert selection.model_family == "claude"
+
+
 def test_resolver_prefers_vertex_over_openrouter_for_gemini_family(monkeypatch):
     _clear_llm_env(monkeypatch)
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
@@ -65,6 +77,19 @@ def test_resolver_respects_explicit_openrouter_provider(monkeypatch):
 
     assert selection.provider == "openrouter"
     assert selection.model == "anthropic/claude-sonnet-4-6"
+    assert selection.model_family == "claude"
+
+
+def test_resolver_supports_explicit_anthropic_vertex_provider(monkeypatch):
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+
+    selection = resolve_llm_selection(
+        model="claude-sonnet-4-6", provider="anthropic-vertex"
+    )
+
+    assert selection.provider == "anthropic-vertex"
+    assert selection.model == "claude-sonnet-4-6"
     assert selection.model_family == "claude"
 
 
@@ -97,6 +122,15 @@ def test_resolver_requires_credentials_for_explicit_provider(monkeypatch):
 
     with pytest.raises(LLMResolutionError, match="OPENROUTER_API_KEY is not set"):
         resolve_llm_selection(model="gpt-5-mini", provider="openrouter")
+
+
+def test_resolver_requires_google_project_for_explicit_anthropic_vertex_provider(
+    monkeypatch,
+):
+    _clear_llm_env(monkeypatch)
+
+    with pytest.raises(LLMResolutionError, match="GOOGLE_CLOUD_PROJECT is not set"):
+        resolve_llm_selection(model="claude-sonnet-4-6", provider="anthropic-vertex")
 
 
 def test_resolver_accepts_explicit_openrouter_native_model(monkeypatch):

@@ -126,7 +126,7 @@ def translate_subtitles(
     if engine == "vertex":
         from autosub.pipeline.translate.translator import VertexTranslator
 
-        if provider == "google-vertex" and not PROJECT_ID:
+        if provider in {"google-vertex", "anthropic-vertex"} and not PROJECT_ID:
             raise ValueError("GOOGLE_CLOUD_PROJECT is not set in the environment.")
 
         llm_trace_path = output_ass_path.with_suffix(".llm_trace.jsonl")

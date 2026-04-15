@@ -1,5 +1,7 @@
 import pytest
+from anthropic import AsyncAnthropicVertex
 from pydantic_ai import NativeOutput, PromptedOutput, ToolOutput
+from pydantic_ai.models.anthropic import AnthropicModel
 
 from autosub.core.llm import BaseStructuredLLM, ReasoningEffort
 from autosub.pipeline.translate.translator import VertexTranslator
@@ -41,6 +43,15 @@ def test_vertex_translator_defaults_to_anthropic_haiku():
     translator = VertexTranslator(
         project_id=None,
         provider="anthropic",
+    )
+
+    assert translator.model == "claude-haiku-4-5"
+
+
+def test_vertex_translator_defaults_to_anthropic_vertex_haiku():
+    translator = VertexTranslator(
+        project_id="test-project",
+        provider="anthropic-vertex",
     )
 
     assert translator.model == "claude-haiku-4-5"
@@ -331,6 +342,33 @@ def test_anthropic_reasoning_dynamic_is_rejected():
 
     with pytest.raises(ValueError, match="does not support reasoning_dynamic"):
         llm._build_anthropic_model_settings(llm._get_model_config())
+
+
+def test_anthropic_vertex_builds_vertex_backed_anthropic_client():
+    llm = BaseStructuredLLM(
+        project_id="test-project",
+        model="claude-haiku-4-5",
+        provider="anthropic-vertex",
+        location="us-east5",
+    )
+
+    model = llm._build_model()
+
+    assert isinstance(model, AnthropicModel)
+    assert isinstance(model.client, AsyncAnthropicVertex)
+    assert model.client.project_id == "test-project"
+    assert model.client.region == "us-east5"
+
+
+def test_anthropic_vertex_requires_google_project_id():
+    llm = BaseStructuredLLM(
+        project_id=None,
+        model="claude-haiku-4-5",
+        provider="anthropic-vertex",
+    )
+
+    with pytest.raises(ValueError, match="requires a Google Cloud project id"):
+        llm._build_model()
 
 
 def test_openai_reasoning_effort_maps_to_unified_thinking():
