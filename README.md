@@ -648,8 +648,23 @@ Supported options:
 - `window_overlap`: Window overlap for non-`full_script` classification
 - `split_framing_phrases`: Split host framing suffixes into separate lines before classification
 - `label_roles`: Persist the resolved role onto subtitle events
+- `greetings`: List of phrases after which the line is split before role classification (see below)
 
 `hybrid` uses rule-based labels first and falls back to them if LLM classification fails.
+
+### `greetings` splitting
+
+`greetings` accepts a list of phrases. Any subtitle line containing one of those phrases is split immediately after the last character of the matching phrase, before role classification runs.
+
+```toml
+greetings = ["のんばんは", "こんにちは"]
+```
+
+Behavior notes:
+
+- The split point is the character position directly after the phrase — punctuation that follows the phrase (e.g. `。`) ends up on the **next** line. To keep punctuation attached to the greeting line, include it in the phrase string: `"のんばんは。"`.
+- If the phrase ends exactly at the end of the line, no split is performed.
+- Greetings are matched against post-replacement text, so a replacement like `"の番は" = "のんばんは"` and `greetings = ["のんばんは"]` will correctly find and split lines where the original transcript had `の番は`. Timestamps are resolved back through the replacement span to the correct word boundary.
 
 Anthropic-backed `radio_discourse` example:
 
