@@ -1,7 +1,6 @@
 import hashlib
 import json
 import logging
-import time
 import traceback
 from pathlib import Path
 
@@ -180,7 +179,10 @@ def translate_subtitles(
     try:
         if chunk_size > 0:
             translated_texts, splits = _translate_chunked(
-                translator, texts_to_translate, chunk_size, checkpoint_path,
+                translator,
+                texts_to_translate,
+                chunk_size,
+                checkpoint_path,
                 corner_boundaries=corner_boundaries or None,
                 retry_chunks=retry_chunks,
                 log_dir=log_dir,

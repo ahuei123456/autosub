@@ -1,4 +1,4 @@
-from typing import List, Literal
+from typing import List, Literal, NamedTuple
 
 from pydantic import BaseModel, Field
 
@@ -33,6 +33,13 @@ class TranscriptionResult(BaseModel):
     metadata: TranscriptionMetadata | None = None
 
 
+class ReplacementSpan(NamedTuple):
+    orig_start: int
+    orig_end: int
+    replaced_start: int
+    replaced_end: int
+
+
 class SubtitleLine(BaseModel):
     text: str
     start_time: float
@@ -40,3 +47,5 @@ class SubtitleLine(BaseModel):
     speaker: str | None = None
     role: str | None = None
     corner: str | None = None
+    words: List[TranscribedWord] = Field(default_factory=list)
+    replacement_spans: List[ReplacementSpan] = Field(default_factory=list)

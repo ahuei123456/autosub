@@ -89,7 +89,7 @@ def test_merge_llm_takes_precedence():
 
 def test_merge_cue_fills_gaps():
     cue = [None, "Fan Letter", None]
-    llm = [None, None, None]
+    llm: list[str | None] = [None, None, None]
     assert _merge_detections(cue, llm) == [None, "Fan Letter", None]
 
 
@@ -121,9 +121,7 @@ def test_apply_corners_preserves_text_and_timing():
 
 
 def test_apply_corners_preserves_role():
-    line = SubtitleLine(
-        text="お便り", start_time=0.0, end_time=1.0, role="host"
-    )
+    line = SubtitleLine(text="お便り", start_time=0.0, end_time=1.0, role="host")
     config = {"segments": SEGMENTS, "engine": "cues"}
     result = apply_corners([line], config)
     assert result[0].role == "host"

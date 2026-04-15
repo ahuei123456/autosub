@@ -1,7 +1,6 @@
 from autosub.pipeline.translate.chunker import (
     make_chunks,
     _chunk_by_corners,
-    MIN_CHUNK_SIZE,
 )
 
 

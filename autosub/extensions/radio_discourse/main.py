@@ -7,6 +7,11 @@ from autosub.core.config import PROJECT_ID
 from autosub.core.errors import VertexError
 from autosub.core.schemas import SubtitleLine
 from autosub.extensions.radio_discourse.classifier import classify_roles_with_vertex
+from autosub.pipeline.format.split_utils import (
+    find_split_time,
+    partition_words,
+    partition_spans,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +75,12 @@ def apply_radio_discourse(
     if config is None:
         config = {}
 
+    greetings = config.get("greetings", [])
+    if greetings:
+        from autosub.pipeline.format.main import apply_split_after
+
+        lines = apply_split_after(lines, greetings)
+
     processed_lines: list[SubtitleLine] = []
     for line in lines:
         if config.get("split_framing_phrases", True):
@@ -130,25 +141,16 @@ def split_host_meta_suffix(line: SubtitleLine) -> list[SubtitleLine]:
             return [line]
 
         main_text = _ensure_terminal_punctuation(main_text)
-        total_duration = max(line.end_time - line.start_time, 0.0)
-        if total_duration <= 0:
-            return [
-                SubtitleLine(
-                    text=main_text,
-                    start_time=line.start_time,
-                    end_time=line.end_time,
-                    speaker=line.speaker,
-                ),
-                SubtitleLine(
-                    text=suffix,
-                    start_time=line.end_time,
-                    end_time=line.end_time,
-                    speaker=line.speaker,
-                ),
-            ]
 
-        boundary_ratio = len(main_text) / max(len(main_text) + len(suffix), 1)
-        split_time = line.start_time + total_duration * boundary_ratio
+        # Position of the suffix in line.text (in replaced-text coordinates).
+        split_char_pos = len(line.text) - len(suffix)
+        split_time = find_split_time(line, split_char_pos)
+        split_time = max(line.start_time, min(split_time, line.end_time))
+
+        first_words, second_words = partition_words(line.words, split_time)
+        first_spans, second_spans = partition_spans(
+            line.replacement_spans, split_char_pos
+        )
 
         return [
             SubtitleLine(
@@ -156,12 +158,16 @@ def split_host_meta_suffix(line: SubtitleLine) -> list[SubtitleLine]:
                 start_time=line.start_time,
                 end_time=split_time,
                 speaker=line.speaker,
+                words=first_words,
+                replacement_spans=first_spans,
             ),
             SubtitleLine(
                 text=suffix,
                 start_time=split_time,
                 end_time=line.end_time,
                 speaker=line.speaker,
+                words=second_words,
+                replacement_spans=second_spans,
             ),
         ]
 

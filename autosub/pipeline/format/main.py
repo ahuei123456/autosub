@@ -2,9 +2,10 @@ import json
 import logging
 from pathlib import Path
 
-from autosub.core.schemas import SubtitleLine, TranscriptionResult
+from autosub.core.schemas import ReplacementSpan, SubtitleLine, TranscriptionResult
 from autosub.pipeline.format import chunker
 from autosub.pipeline.format import generator
+from autosub.pipeline.format.split_utils import find_split_time, partition_spans
 from autosub.pipeline.format.timing import apply_timing_rules
 
 logger = logging.getLogger(__name__)
@@ -61,8 +62,15 @@ def _apply_combined_extensions(
     # settings as fallbacks so corners-specific LLM config takes effect when
     # radio_discourse doesn't specify a given setting.
     combined_config = dict(radio_config)
-    for key in ("model", "location", "provider", "reasoning_effort",
-                "reasoning_budget_tokens", "reasoning_dynamic", "provider_options"):
+    for key in (
+        "model",
+        "location",
+        "provider",
+        "reasoning_effort",
+        "reasoning_budget_tokens",
+        "reasoning_dynamic",
+        "provider_options",
+    ):
         if key not in combined_config and key in corners_config:
             combined_config[key] = corners_config[key]
     combined_config.setdefault("project_id", PROJECT_ID)
@@ -118,6 +126,7 @@ def _segments_to_lines(transcript: TranscriptionResult) -> list[SubtitleLine]:
                 start_time=segment.start_time,
                 end_time=segment.end_time,
                 speaker=segment.speaker,
+                words=list(segment.words),
             )
         )
     lines.sort(key=lambda line: line.start_time)
@@ -130,6 +139,149 @@ def _initial_lines(transcript: TranscriptionResult) -> list[SubtitleLine]:
         logger.info("Using transcript segments as initial subtitle lines.")
         return _segments_to_lines(transcript)
     return chunker.chunk_words_to_lines(transcript.words)
+
+
+def _apply_replacements_with_spans(
+    text: str, replacements: dict[str, str]
+) -> tuple[str, list[ReplacementSpan]]:
+    """
+    Apply all replacements to text in a single pass, returning the replaced text
+    and a list of ReplacementSpan objects tracking each substitution.
+
+    Replacements are applied longest-source-first to resolve ambiguity when
+    multiple patterns could match at the same position. Overlapping matches are
+    skipped (first match wins).
+    """
+    if not replacements:
+        return text, []
+
+    # Collect all matches for all patterns
+    all_matches: list[tuple[int, int, str]] = []  # (start, end, old_str)
+    for old_str in replacements:
+        pos = 0
+        while True:
+            idx = text.find(old_str, pos)
+            if idx == -1:
+                break
+            all_matches.append((idx, idx + len(old_str), old_str))
+            pos = idx + 1
+
+    if not all_matches:
+        return text, []
+
+    # Sort by position; prefer longer match on ties (longest-first resolved by
+    # negative length as secondary key)
+    all_matches.sort(key=lambda m: (m[0], -(m[1] - m[0])))
+
+    # Accept non-overlapping matches
+    accepted: list[tuple[int, int, str]] = []
+    last_end = 0
+    for start, end, old_str in all_matches:
+        if start >= last_end:
+            accepted.append((start, end, old_str))
+            last_end = end
+
+    # Build replaced text and spans in one pass
+    result_parts: list[str] = []
+    spans: list[ReplacementSpan] = []
+    orig_pos = 0
+    replaced_pos = 0
+
+    for orig_start, orig_end, old_str in accepted:
+        new_str = replacements[old_str]
+        if orig_start > orig_pos:
+            chunk = text[orig_pos:orig_start]
+            result_parts.append(chunk)
+            replaced_pos += len(chunk)
+        result_parts.append(new_str)
+        spans.append(
+            ReplacementSpan(
+                orig_start=orig_start,
+                orig_end=orig_end,
+                replaced_start=replaced_pos,
+                replaced_end=replaced_pos + len(new_str),
+            )
+        )
+        replaced_pos += len(new_str)
+        orig_pos = orig_end
+
+    if orig_pos < len(text):
+        result_parts.append(text[orig_pos:])
+
+    return "".join(result_parts), spans
+
+
+def _split_line_after(line: SubtitleLine, split_after: list[str]) -> list[SubtitleLine]:
+    """Split a single line after every occurrence of any phrase in split_after."""
+    split_positions: set[int] = set()
+    for phrase in split_after:
+        pos = 0
+        while True:
+            idx = line.text.find(phrase, pos)
+            if idx == -1:
+                break
+            end_pos = idx + len(phrase)
+            if end_pos < len(line.text):
+                split_positions.add(end_pos)
+            pos = idx + 1
+
+    if not split_positions:
+        return [line]
+
+    sorted_positions = sorted(split_positions)
+    split_times = [find_split_time(line, pos) for pos in sorted_positions]
+
+    text_boundaries = [0] + sorted_positions + [len(line.text)]
+    time_boundaries = [line.start_time] + split_times + [line.end_time]
+
+    result: list[SubtitleLine] = []
+    current_spans = list(line.replacement_spans)
+
+    for i in range(len(text_boundaries) - 1):
+        txs = text_boundaries[i]
+        txe = text_boundaries[i + 1]
+        ts = time_boundaries[i]
+        te = time_boundaries[i + 1]
+        is_last = i == len(text_boundaries) - 2
+
+        # Partition spans: the split position within the current span coordinate system
+        # is always the length of this segment (txe - txs) because current_spans has
+        # already been adjusted by prior iterations.
+        if not is_last:
+            seg_span_len = txe - txs
+            seg_spans, current_spans = partition_spans(current_spans, seg_span_len)
+        else:
+            seg_spans = current_spans
+
+        if is_last:
+            seg_words = [w for w in line.words if w.end_time > ts]
+        else:
+            seg_words = [w for w in line.words if w.end_time > ts and w.end_time <= te]
+
+        result.append(
+            SubtitleLine(
+                text=line.text[txs:txe],
+                start_time=ts,
+                end_time=te,
+                speaker=line.speaker,
+                role=line.role,
+                corner=line.corner,
+                words=seg_words,
+                replacement_spans=seg_spans,
+            )
+        )
+
+    return result
+
+
+def apply_split_after(
+    lines: list[SubtitleLine], split_after: list[str]
+) -> list[SubtitleLine]:
+    """Split every line after each occurrence of any phrase in split_after."""
+    result: list[SubtitleLine] = []
+    for line in lines:
+        result.extend(_split_line_after(line, split_after))
+    return result
 
 
 def format_subtitles(
@@ -163,8 +315,9 @@ def format_subtitles(
     if replacements:
         logger.info(f"Applying {len(replacements)} text replacements...")
         for line in lines:
-            for old_str, new_str in replacements.items():
-                line.text = line.text.replace(old_str, new_str)
+            new_text, spans = _apply_replacements_with_spans(line.text, replacements)
+            line.text = new_text
+            line.replacement_spans = spans
 
     if not extensions_config:
         extensions_config = {}

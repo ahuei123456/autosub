@@ -83,5 +83,9 @@ def _create_line(chunk: List[TranscribedWord]) -> SubtitleLine:
     ].speaker  # Assume speaker is uniform across a single semantic chunk
 
     return SubtitleLine(
-        text=text, start_time=start_time, end_time=end_time, speaker=speaker
+        text=text,
+        start_time=start_time,
+        end_time=end_time,
+        speaker=speaker,
+        words=list(chunk),
     )

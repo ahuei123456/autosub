@@ -889,7 +889,6 @@ def run(
     final_format_extensions = {}
     final_postprocess_extensions = {}
     replacements = {}
-    profile_speakers_requested = False
     if profile:
         profile_data = load_unified_profile(profile)
         transcribe_profile = profile_data.get("transcribe", {})

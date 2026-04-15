@@ -72,6 +72,7 @@ def test_run_help_hides_advanced_translation_knobs():
 def test_translate_model_infers_provider_and_engine(tmp_path, monkeypatch):
     input_ass = tmp_path / "original.ass"
     _write_minimal_ass(input_ass)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic")
 
     captured: dict[str, object] = {}

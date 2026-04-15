@@ -9,9 +9,7 @@ from autosub.pipeline.format.main import _apply_combined_extensions
 
 
 def _line(text, start=0.0, end=1.0, speaker=None):
-    return SubtitleLine(
-        text=text, start_time=start, end_time=end, speaker=speaker
-    )
+    return SubtitleLine(text=text, start_time=start, end_time=end, speaker=speaker)
 
 
 @pytest.fixture
@@ -103,7 +101,7 @@ class TestApplyCombinedExtensions:
 
         def mock_classify(lines, fallback_roles, segments, config):
             roles = ["host"] * len(lines)
-            corners = [None] * len(lines)
+            corners: list[str | None] = [None] * len(lines)
             corners[0] = "Opening"
             return roles, corners
 
@@ -123,9 +121,7 @@ class TestApplyCombinedExtensions:
         corners = [line.corner for line in result]
         assert "Opening" in corners
 
-    def test_merges_corners_config_into_combined(
-        self, sample_lines, tmp_path
-    ):
+    def test_merges_corners_config_into_combined(self, sample_lines, tmp_path):
         """Corners config settings fill gaps not specified by radio config."""
         radio_config = {
             "enabled": True,
@@ -162,9 +158,7 @@ class TestApplyCombinedExtensions:
         assert captured_config["model"] == "corners-specific-model"
         assert captured_config["location"] == "us-central1"
 
-    def test_radio_config_takes_precedence_over_corners(
-        self, sample_lines, tmp_path
-    ):
+    def test_radio_config_takes_precedence_over_corners(self, sample_lines, tmp_path):
         """When both configs specify the same key, radio config wins."""
         radio_config = {
             "enabled": True,
