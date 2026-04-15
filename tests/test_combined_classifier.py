@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from autosub.core.schemas import SubtitleLine
+from autosub.core.schemas import SubtitleLine, TranscribedWord
 from autosub.pipeline.format.main import _apply_combined_extensions
 
 
@@ -217,3 +217,47 @@ class TestApplyCombinedExtensions:
         corners = [line.corner for line in result if line.corner]
         assert "Opening" in corners
         assert "Suggestion Box" in corners
+
+    def test_combined_extensions_apply_greetings_split_before_classification(
+        self, corners_config, tmp_path
+    ):
+        radio_config = {
+            "enabled": True,
+            "engine": "hybrid",
+            "split_framing_phrases": False,
+            "label_roles": True,
+            "greetings": ["のんばんは"],
+        }
+        lines = [
+            SubtitleLine(
+                text="のんばんは？初メールです。",
+                start_time=0.0,
+                end_time=2.0,
+                words=[
+                    TranscribedWord(word="のん", start_time=0.0, end_time=0.3),
+                    TranscribedWord(word="ばん", start_time=0.3, end_time=0.6),
+                    TranscribedWord(word="は？", start_time=0.6, end_time=1.0),
+                    TranscribedWord(word="初", start_time=1.0, end_time=1.2),
+                    TranscribedWord(word="メール", start_time=1.2, end_time=1.6),
+                    TranscribedWord(word="です。", start_time=1.6, end_time=2.0),
+                ],
+            )
+        ]
+        output_path = tmp_path / "test.ass"
+
+        def mock_classify(lines, fallback_roles, segments, config):
+            roles = ["host"] * len(lines)
+            corners = [None] * len(lines)
+            return roles, corners
+
+        with patch(
+            "autosub.extensions.combined_classifier.classify_combined",
+            side_effect=mock_classify,
+        ):
+            result = _apply_combined_extensions(
+                lines, radio_config, corners_config, output_path
+            )
+
+        assert len(result) == 2
+        assert result[0].text == "のんばんは？"
+        assert result[1].text == "初メールです。"

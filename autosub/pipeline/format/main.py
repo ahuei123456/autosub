@@ -14,6 +14,7 @@ VALID_ENGINES: dict[str, set[str]] = {
     "radio_discourse": {"rules", "llm", "hybrid"},
     "corners": {"cues", "llm", "hybrid"},
 }
+TRAILING_SPLIT_PUNCTUATION = "。！？!?、,"
 
 
 def _validate_engine(engine: str, extension: str, valid: set[str]) -> None:
@@ -37,9 +38,14 @@ def _apply_combined_extensions(
     from autosub.extensions.combined_classifier import classify_combined
     from autosub.extensions.corners.main import dedup_consecutive, detect_by_cues
     from autosub.extensions.radio_discourse.main import (
+        _normalize_greetings,
         classify_role,
         split_host_meta_suffix,
     )
+
+    greetings = _normalize_greetings(radio_config.get("greetings", []))
+    if greetings:
+        lines = apply_split_after(lines, greetings, ensure_terminal_punctuation=True)
 
     processed: list[SubtitleLine] = []
     if radio_config.get("split_framing_phrases", True):
@@ -213,6 +219,18 @@ def _apply_replacements_with_spans(
 
 def _split_line_after(line: SubtitleLine, split_after: list[str]) -> list[SubtitleLine]:
     """Split a single line after every occurrence of any phrase in split_after."""
+    return _split_line_after_with_options(
+        line, split_after, ensure_terminal_punctuation=False
+    )
+
+
+def _split_line_after_with_options(
+    line: SubtitleLine,
+    split_after: list[str],
+    *,
+    ensure_terminal_punctuation: bool,
+) -> list[SubtitleLine]:
+    """Split a single line after every occurrence of any phrase in split_after."""
     split_positions: set[int] = set()
     for phrase in split_after:
         pos = 0
@@ -221,6 +239,11 @@ def _split_line_after(line: SubtitleLine, split_after: list[str]) -> list[Subtit
             if idx == -1:
                 break
             end_pos = idx + len(phrase)
+            while (
+                end_pos < len(line.text)
+                and line.text[end_pos] in TRAILING_SPLIT_PUNCTUATION
+            ):
+                end_pos += 1
             if end_pos < len(line.text):
                 split_positions.add(end_pos)
             pos = idx + 1
@@ -260,7 +283,11 @@ def _split_line_after(line: SubtitleLine, split_after: list[str]) -> list[Subtit
 
         result.append(
             SubtitleLine(
-                text=line.text[txs:txe],
+                text=_normalize_split_text(
+                    line.text[txs:txe],
+                    ensure_terminal_punctuation=ensure_terminal_punctuation
+                    and not is_last,
+                ),
                 start_time=ts,
                 end_time=te,
                 speaker=line.speaker,
@@ -275,13 +302,30 @@ def _split_line_after(line: SubtitleLine, split_after: list[str]) -> list[Subtit
 
 
 def apply_split_after(
-    lines: list[SubtitleLine], split_after: list[str]
+    lines: list[SubtitleLine],
+    split_after: list[str],
+    *,
+    ensure_terminal_punctuation: bool = False,
 ) -> list[SubtitleLine]:
     """Split every line after each occurrence of any phrase in split_after."""
     result: list[SubtitleLine] = []
     for line in lines:
-        result.extend(_split_line_after(line, split_after))
+        result.extend(
+            _split_line_after_with_options(
+                line,
+                split_after,
+                ensure_terminal_punctuation=ensure_terminal_punctuation,
+            )
+        )
     return result
+
+
+def _normalize_split_text(text: str, *, ensure_terminal_punctuation: bool) -> str:
+    if not ensure_terminal_punctuation or not text:
+        return text
+    if text.endswith(tuple(TRAILING_SPLIT_PUNCTUATION)):
+        return text
+    return f"{text}。"
 
 
 def format_subtitles(

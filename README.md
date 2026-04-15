@@ -662,7 +662,8 @@ greetings = ["のんばんは", "こんにちは"]
 
 Behavior notes:
 
-- The split point is the character position directly after the phrase — punctuation that follows the phrase (e.g. `。`) ends up on the **next** line. To keep punctuation attached to the greeting line, include it in the phrase string: `"のんばんは。"`.
+- If the phrase is immediately followed by punctuation (`。！？!?、,`), that punctuation stays on the greeting line before the split.
+- If the split-created greeting line does not already end with sentence punctuation, `。` is appended to that line.
 - If the phrase ends exactly at the end of the line, no split is performed.
 - Greetings are matched against post-replacement text, so a replacement like `"の番は" = "のんばんは"` and `greetings = ["のんばんは"]` will correctly find and split lines where the original transcript had `の番は`. Timestamps are resolved back through the replacement span to the correct word boundary.
 

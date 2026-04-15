@@ -141,7 +141,7 @@ def test_apply_radio_discourse_greetings_splits_before_extension():
     )
 
     assert len(result) == 2
-    assert result[0].text == "のんばんは"
+    assert result[0].text == "のんばんは。"
     assert result[1].text == "今日もよろしく。"
     assert result[0].end_time == pytest.approx(1.0)  # は.end_time
     assert result[1].start_time == pytest.approx(1.0)
@@ -164,7 +164,121 @@ def test_apply_radio_discourse_greetings_multiple_phrases():
     )
 
     assert len(result) == 4
-    assert result[0].text == "のんばんは"
+    assert result[0].text == "のんばんは。"
     assert result[1].text == "今日も。"
-    assert result[2].text == "おはようございます"
+    assert result[2].text == "おはようございます。"
     assert result[3].text == "明日も。"
+
+
+def test_apply_radio_discourse_greetings_coerces_string_to_one_item_list():
+    lines = [
+        SubtitleLine(
+            text="のんばんは今日もよろしく。",
+            start_time=0.0,
+            end_time=3.0,
+            words=[
+                TranscribedWord(word="のん", start_time=0.0, end_time=0.5),
+                TranscribedWord(word="ばん", start_time=0.5, end_time=0.8),
+                TranscribedWord(word="は", start_time=0.8, end_time=1.0),
+                TranscribedWord(word="今日も", start_time=1.1, end_time=2.0),
+                TranscribedWord(word="よろしく。", start_time=2.0, end_time=3.0),
+            ],
+        ),
+    ]
+
+    result = apply_radio_discourse(
+        lines,
+        {"enabled": True, "greetings": "のんばんは", "split_framing_phrases": False},
+    )
+
+    assert len(result) == 2
+    assert result[0].text == "のんばんは。"
+    assert result[1].text == "今日もよろしく。"
+    assert result[0].end_time == pytest.approx(1.0)
+    assert result[1].start_time == pytest.approx(1.0)
+
+
+def test_apply_radio_discourse_greetings_keeps_trailing_period_with_greeting():
+    lines = [
+        SubtitleLine(
+            text="のんばんは。のんばんは",
+            start_time=0.0,
+            end_time=2.0,
+            words=[
+                TranscribedWord(word="のん", start_time=0.0, end_time=0.3),
+                TranscribedWord(word="ばん", start_time=0.3, end_time=0.6),
+                TranscribedWord(word="は。", start_time=0.6, end_time=1.0),
+                TranscribedWord(word="のん", start_time=1.0, end_time=1.3),
+                TranscribedWord(word="ばん", start_time=1.3, end_time=1.6),
+                TranscribedWord(word="は", start_time=1.6, end_time=2.0),
+            ],
+        ),
+    ]
+
+    result = apply_radio_discourse(
+        lines,
+        {"enabled": True, "greetings": ["のんばんは"], "split_framing_phrases": False},
+    )
+
+    assert len(result) == 2
+    assert result[0].text == "のんばんは。"
+    assert result[1].text == "のんばんは"
+    assert result[0].end_time == pytest.approx(1.0)
+    assert result[1].start_time == pytest.approx(1.0)
+
+
+def test_apply_radio_discourse_greetings_adds_period_when_phrase_has_none():
+    lines = [
+        SubtitleLine(
+            text="おはようございます今日も。",
+            start_time=0.0,
+            end_time=3.0,
+            words=[
+                TranscribedWord(word="おはよう", start_time=0.0, end_time=0.5),
+                TranscribedWord(word="ございます", start_time=0.5, end_time=1.0),
+                TranscribedWord(word="今日も。", start_time=1.0, end_time=3.0),
+            ],
+        ),
+    ]
+
+    result = apply_radio_discourse(
+        lines,
+        {
+            "enabled": True,
+            "greetings": ["おはようございます"],
+            "split_framing_phrases": False,
+        },
+    )
+
+    assert len(result) == 2
+    assert result[0].text == "おはようございます。"
+    assert result[1].text == "今日も。"
+
+
+def test_apply_radio_discourse_greetings_attaches_comma_to_greeting_line():
+    lines = [
+        SubtitleLine(
+            text="のんばんは、のんばんは",
+            start_time=0.0,
+            end_time=2.0,
+            words=[
+                TranscribedWord(word="のん", start_time=0.0, end_time=0.3),
+                TranscribedWord(word="ばん", start_time=0.3, end_time=0.6),
+                TranscribedWord(word="は、", start_time=0.6, end_time=1.0),
+                TranscribedWord(word="のん", start_time=1.0, end_time=1.3),
+                TranscribedWord(word="ばん", start_time=1.3, end_time=1.6),
+                TranscribedWord(word="は", start_time=1.6, end_time=2.0),
+            ],
+        ),
+    ]
+
+    result = apply_radio_discourse(
+        lines,
+        {"enabled": True, "greetings": ["のんばんは"], "split_framing_phrases": False},
+    )
+
+    assert len(result) == 2
+    assert result[0].text == "のんばんは、"
+    assert result[1].text == "のんばんは"
+    assert result[0].end_time == pytest.approx(1.0)
+    assert result[1].start_time == pytest.approx(1.0)

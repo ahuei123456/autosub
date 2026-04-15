@@ -135,8 +135,8 @@ def test_apply_split_after_verbatim_phrase_uses_word_timestamp():
     )
     result = apply_split_after([line], ["のんばんは"])
     assert len(result) == 2
-    assert result[0].text == "のんばんは"
-    assert result[1].text == "。先日農市"
+    assert result[0].text == "のんばんは。"
+    assert result[1].text == "先日農市"
     assert result[0].end_time == pytest.approx(709.8)
     assert result[1].start_time == pytest.approx(709.8)
 
@@ -212,6 +212,41 @@ def test_apply_split_after_multiple_lines():
     assert result[2].text == "変わらない"
     assert result[3].text == "のんばんは"
     assert result[4].text == "また明日"
+
+
+def test_apply_split_after_attaches_trailing_punctuation_to_first_subline():
+    line = SubtitleLine(
+        text="のんばんは。のんばんは！また明日", start_time=0.0, end_time=6.0
+    )
+    result = apply_split_after([line], ["のんばんは"])
+    assert len(result) == 3
+    assert result[0].text == "のんばんは。"
+    assert result[1].text == "のんばんは！"
+    assert result[2].text == "また明日"
+
+
+def test_apply_split_after_can_append_terminal_punctuation_when_enabled():
+    line = SubtitleLine(text="のんばんは今日もよろしく", start_time=0.0, end_time=5.0)
+    result = apply_split_after(
+        [line],
+        ["のんばんは"],
+        ensure_terminal_punctuation=True,
+    )
+    assert len(result) == 2
+    assert result[0].text == "のんばんは。"
+    assert result[1].text == "今日もよろしく"
+
+
+def test_apply_split_after_attaches_comma_and_does_not_append_period():
+    line = SubtitleLine(text="のんばんは、のんばんは", start_time=0.0, end_time=5.0)
+    result = apply_split_after(
+        [line],
+        ["のんばんは"],
+        ensure_terminal_punctuation=True,
+    )
+    assert len(result) == 2
+    assert result[0].text == "のんばんは、"
+    assert result[1].text == "のんばんは"
 
 
 def test_apply_split_after_spans_propagated_to_first_subline():

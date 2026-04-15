@@ -75,11 +75,11 @@ def apply_radio_discourse(
     if config is None:
         config = {}
 
-    greetings = config.get("greetings", [])
+    greetings = _normalize_greetings(config.get("greetings", []))
     if greetings:
         from autosub.pipeline.format.main import apply_split_after
 
-        lines = apply_split_after(lines, greetings)
+        lines = apply_split_after(lines, greetings, ensure_terminal_punctuation=True)
 
     processed_lines: list[SubtitleLine] = []
     for line in lines:
@@ -128,6 +128,16 @@ def apply_radio_discourse(
         )
 
     return classified_lines
+
+
+def _normalize_greetings(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item]
+    return []
 
 
 def split_host_meta_suffix(line: SubtitleLine) -> list[SubtitleLine]:
