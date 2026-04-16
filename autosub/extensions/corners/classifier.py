@@ -78,11 +78,12 @@ class VertexCornerClassifier(BaseStructuredLLM):
             "2. Use neighboring lines for context. This is sequential dialogue from one episode.\n"
             "3. A transition can be signaled by an explicit cue phrase, a change in topic, or the host introducing a new segment.\n"
             "4. Do not mark a segment that is already in progress — only mark transitions.\n"
-            "5. If unsure whether a transition occurred, prefer null (do not mark).\n"
-            "6. Return valid JSON only.\n"
-            "7. Return the exact same number of items as the input.\n"
-            "8. Each item must contain exactly two fields: 'id' and 'corner'.\n"
-            "9. 'corner' must be one of the segment names listed above, or null.\n"
+            "5. Each segment transition should appear AT MOST ONCE. If you have already marked a line as starting a segment, do not mark any subsequent lines as starting the same segment — they are continuations, not new transitions.\n"
+            "6. If unsure whether a transition occurred, prefer null (do not mark).\n"
+            "7. Return valid JSON only.\n"
+            "8. Return the exact same number of items as the input.\n"
+            "9. Each item must contain exactly two fields: 'id' and 'corner'.\n"
+            "10. 'corner' must be one of the segment names listed above, or null.\n"
         )
 
     def classify_window(
