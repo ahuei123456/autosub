@@ -97,16 +97,6 @@ _CHIRP_LOCATIONS = {
 }
 
 
-_CHIRP_ENDPOINTS = {
-    "chirp_2": "us-central1-speech.googleapis.com",
-    "chirp_3": "us-speech.googleapis.com",
-}
-_CHIRP_LOCATIONS = {
-    "chirp_2": "us-central1",
-    "chirp_3": "us",
-}
-
-
 def transcribe_uri(
     gcs_uri: str,
     project_id: str,
