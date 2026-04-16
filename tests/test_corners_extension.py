@@ -67,15 +67,27 @@ def testdedup_consecutive_no_dupes():
 
 
 def test_dedup_consecutive_same_corner_after_none_gap():
-    """A show that returns to the same corner after a gap should preserve the second occurrence."""
+    """Same corner across a None gap is an over-detection and should be suppressed."""
     corners = ["Fan Letter", None, None, "Fan Letter"]
-    assert dedup_consecutive(corners) == ["Fan Letter", None, None, "Fan Letter"]
+    assert dedup_consecutive(corners) == ["Fan Letter", None, None, None]
 
 
 def test_dedup_consecutive_same_corner_no_gap():
     """Truly consecutive same-corner should still be deduped."""
     corners = ["Fan Letter", "Fan Letter", None, "Song"]
     assert dedup_consecutive(corners) == ["Fan Letter", None, None, "Song"]
+
+
+def test_dedup_consecutive_same_corner_after_different_corner():
+    """Same corner returning after a different corner is a real transition — keep it."""
+    corners = ["Fan Letter", None, "Song", None, "Fan Letter"]
+    assert dedup_consecutive(corners) == ["Fan Letter", None, "Song", None, "Fan Letter"]
+
+
+def test_dedup_consecutive_multiple_over_detections():
+    """Multiple over-detections of the same corner across gaps are all suppressed."""
+    corners = ["A", None, "A", None, None, "A"]
+    assert dedup_consecutive(corners) == ["A", None, None, None, None, None]
 
 
 # --- _merge_detections ---
