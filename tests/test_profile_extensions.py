@@ -224,6 +224,61 @@ cues = ["終わり"]
         autosub.core.profile.Path = original_path
 
 
+def test_normalizer_terms_are_accumulated_across_profile_extends(tmp_path):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+
+    (profile_dir / "base.toml").write_text(
+        """
+[format.normalizer]
+engine = "llm"
+
+[[format.normalizer.terms]]
+value = "鈴原希実"
+explanation = "Host name."
+""".strip(),
+        encoding="utf-8",
+    )
+    (profile_dir / "child.toml").write_text(
+        """
+extends = ["base"]
+
+[format.normalizer]
+provider = "google-vertex"
+
+[[format.normalizer.terms]]
+value = "のんばんは"
+explanation = "Show greeting."
+""".strip(),
+        encoding="utf-8",
+    )
+
+    import autosub.core.profile
+
+    original_path = autosub.core.profile.Path
+
+    class MockPath(autosub.core.profile.Path):
+        def __new__(cls, *args, **kwargs):
+            if args and args[0] == "profiles":
+                return profile_dir
+            return super().__new__(cls, *args, **kwargs)
+
+    autosub.core.profile.Path = MockPath
+
+    try:
+        data = load_unified_profile("child")
+        assert data["format"]["normalizer"] == {
+            "engine": "llm",
+            "provider": "google-vertex",
+            "terms": [
+                {"value": "鈴原希実", "explanation": "Host name."},
+                {"value": "のんばんは", "explanation": "Show greeting."},
+            ],
+        }
+    finally:
+        autosub.core.profile.Path = original_path
+
+
 def test_no_corners_returns_empty_list(tmp_path):
     profile_dir = tmp_path / "profiles"
     profile_dir.mkdir()

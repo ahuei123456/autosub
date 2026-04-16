@@ -108,7 +108,43 @@ def test_format_subtitles_sets_radio_discourse_trace_path(tmp_path, monkeypatch)
         extensions_config={"radio_discourse": {"enabled": True, "engine": "hybrid"}},
     )
 
-    assert captured["llm_trace_path"] == output_path.with_suffix(".llm_trace.jsonl")
+    assert captured["llm_trace_path"] == output_path.with_suffix(
+        ".radio_discourse.llm_trace.jsonl"
+    )
+
+
+def test_format_subtitles_sets_llm_normalizer_trace_path(tmp_path, monkeypatch):
+    transcript_path = tmp_path / "transcript.json"
+    output_path = tmp_path / "original.ass"
+
+    words = [{"word": "こんにちは", "start_time": 0.0, "end_time": 1.0}]
+    transcript_path.write_text(
+        json.dumps({"words": words}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_apply(lines, config):
+        captured["engine"] = config.get("engine")
+        captured["llm_trace_path"] = config.get("llm_trace_path")
+        return lines
+
+    monkeypatch.setattr("autosub.pipeline.format.main.apply_normalization", fake_apply)
+
+    format_subtitles(
+        transcript_path,
+        output_path,
+        normalizer_config={
+            "engine": "llm",
+            "terms": [{"value": "こんにちは", "explanation": "Greeting."}],
+        },
+    )
+
+    assert captured["engine"] == "llm"
+    assert captured["llm_trace_path"] == output_path.with_suffix(
+        ".normalizer.llm_trace.jsonl"
+    )
 
 
 def test_format_subtitles_prefers_whisperx_segments_when_present(tmp_path):

@@ -82,6 +82,21 @@ vocab = [
 "明日は何しちゃっと" = "明日はなんしちょっと"
 "のんのネーム" = "のんのんネーム"
 
+# Alternative LLM normalizer configuration. Use this instead of [format.replacements].
+# [format.normalizer]
+# engine = "llm"
+# provider = "google-vertex"
+# model = "gemini-2.5-flash-lite"
+# reasoning_effort = "minimal"
+#
+# [[format.normalizer.terms]]
+# value = "鈴原希実"
+# explanation = "Host name. Common ASR confusions include のぞみ, のすみ, and のソミ."
+#
+# [[format.normalizer.terms]]
+# value = "のんばんは"
+# explanation = "Show greeting catchphrase. Often confused with こんばんは or の番は."
+
 [format.extensions.radio_discourse]
 greetings = "のんばんは"
 

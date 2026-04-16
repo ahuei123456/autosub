@@ -1,3 +1,4 @@
+import copy
 import typer
 import logging
 from pathlib import Path
@@ -115,12 +116,34 @@ def _extract_format_profile_config(profile_data: dict) -> tuple[dict, dict, dict
     timing_config = {
         key: value
         for key, value in format_profile.items()
-        if key not in {"extensions", "replacements"}
+        if key not in {"extensions", "replacements", "normalizer"}
     }
+    replacements = format_profile.get("replacements", {})
+    normalizer_config = format_profile.get("normalizer", {})
+    if normalizer_config:
+        normalizer_config = copy.deepcopy(normalizer_config)
+        engine = str(normalizer_config.get("engine", "exact")).lower()
+        normalizer_config["engine"] = engine
+        if engine == "exact":
+            normalizer_config.setdefault("replacements", copy.deepcopy(replacements))
+        elif engine == "llm":
+            if replacements:
+                raise ValueError(
+                    '[format.replacements] cannot be combined with [format.normalizer] engine="llm".'
+                )
+        else:
+            raise ValueError(
+                f"Unsupported format.normalizer.engine '{engine}'. Expected 'exact' or 'llm'."
+            )
+    elif replacements:
+        normalizer_config = {
+            "engine": "exact",
+            "replacements": copy.deepcopy(replacements),
+        }
     return (
         timing_config,
         format_profile.get("extensions", {}),
-        format_profile.get("replacements", {}),
+        normalizer_config,
     )
 
 
@@ -389,12 +412,16 @@ def format(
 
     timing_config = {}
     extensions_config = {}
-    replacements = {}
+    normalizer_config = {}
     if profile:
-        profile_data = load_unified_profile(profile)
-        timing_config, extensions_config, replacements = _extract_format_profile_config(
-            profile_data
-        )
+        try:
+            profile_data = load_unified_profile(profile)
+            timing_config, extensions_config, normalizer_config = (
+                _extract_format_profile_config(profile_data)
+            )
+        except Exception as e:
+            logger.error(f"Error while loading format profile: {e}")
+            raise typer.Exit(code=1)
 
     kf_ms = None
     if keyframes and fps > 0:
@@ -409,7 +436,7 @@ def format(
             keyframes=kf_ms,
             timing_config=timing_config,
             extensions_config=extensions_config,
-            replacements=replacements,
+            normalizer_config=normalizer_config,
         )
     except Exception as e:
         logger.error(f"Error during formatting: {e}")
@@ -888,21 +915,27 @@ def run(
     final_timing = {}
     final_format_extensions = {}
     final_postprocess_extensions = {}
-    replacements = {}
+    normalizer_config = {}
     if profile:
-        profile_data = load_unified_profile(profile)
-        transcribe_profile = profile_data.get("transcribe", {})
-        translate_profile = profile_data.get("translate", {})
-        postprocess_profile = profile_data.get("postprocess", {})
-        final_vocab.extend(transcribe_profile.get("vocab", []))
-        final_prompt_parts.extend(translate_profile.get("prompt", []))
-        final_timing, final_format_extensions, replacements = (
-            _extract_format_profile_config(profile_data)
-        )
-        final_postprocess_extensions = postprocess_profile.get("extensions", {})
-        glossary_text = _build_glossary_prompt(translate_profile.get("glossary", {}))
-        if glossary_text:
-            final_prompt_parts.append(glossary_text)
+        try:
+            profile_data = load_unified_profile(profile)
+            transcribe_profile = profile_data.get("transcribe", {})
+            translate_profile = profile_data.get("translate", {})
+            postprocess_profile = profile_data.get("postprocess", {})
+            final_vocab.extend(transcribe_profile.get("vocab", []))
+            final_prompt_parts.extend(translate_profile.get("prompt", []))
+            final_timing, final_format_extensions, normalizer_config = (
+                _extract_format_profile_config(profile_data)
+            )
+            final_postprocess_extensions = postprocess_profile.get("extensions", {})
+            glossary_text = _build_glossary_prompt(
+                translate_profile.get("glossary", {})
+            )
+            if glossary_text:
+                final_prompt_parts.append(glossary_text)
+        except Exception as e:
+            logger.error(f"Failed while loading profile settings: {e}")
+            raise typer.Exit(code=1)
 
     if vocab:
         final_vocab.extend(vocab)
@@ -990,7 +1023,7 @@ def run(
             video_duration_ms=vid_duration_ms,
             timing_config=final_timing,
             extensions_config=final_format_extensions,
-            replacements=replacements,
+            normalizer_config=normalizer_config,
         )
     except Exception as e:
         logger.error(f"Failed during formatting: {e}")

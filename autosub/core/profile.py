@@ -56,7 +56,7 @@ def _merge_nested_dict(base: dict, override: dict) -> dict:
 def _empty_stage_profile() -> dict[str, dict]:
     return {
         "transcribe": {"vocab": []},
-        "format": {"extensions": {}, "replacements": {}},
+        "format": {"extensions": {}, "replacements": {}, "normalizer": {}},
         "translate": {"prompt": [], "glossary": {}},
         "postprocess": {"extensions": {}},
     }
@@ -76,9 +76,7 @@ def _merge_format_stage(base: dict, override: dict) -> dict:
     merged = _merge_stage_section(base, override)
 
     # Accumulate corners segments from base and override (don't replace)
-    base_segments = (
-        base.get("extensions", {}).get("corners", {}).get("segments", [])
-    )
+    base_segments = base.get("extensions", {}).get("corners", {}).get("segments", [])
     override_segments = (
         override.get("extensions", {}).get("corners", {}).get("segments", [])
     )
@@ -88,7 +86,91 @@ def _merge_format_stage(base: dict, override: dict) -> dict:
             *override_segments,
         ]
 
+    base_terms = base.get("normalizer", {}).get("terms", [])
+    override_terms = override.get("normalizer", {}).get("terms", [])
+    if base_terms or override_terms:
+        merged.setdefault("normalizer", {})["terms"] = [
+            *base_terms,
+            *override_terms,
+        ]
+
     return merged
+
+
+def _normalize_normalizer_term(
+    profile_name: str, item: object
+) -> dict[str, str] | None:
+    if isinstance(item, str):
+        value = item.strip()
+        return {"value": value} if value else None
+
+    if not isinstance(item, dict):
+        logger.warning(
+            f"Each entry in 'format.normalizer.terms' in {profile_name} must be a string or TOML table/dict."
+        )
+        return None
+
+    value = item.get("value")
+    if not isinstance(value, str) or not value.strip():
+        logger.warning(
+            f"Each entry in 'format.normalizer.terms' in {profile_name} must include a non-empty string 'value'."
+        )
+        return None
+
+    normalized = {"value": value.strip()}
+    explanation = item.get("explanation")
+    if explanation is not None:
+        if isinstance(explanation, str) and explanation.strip():
+            normalized["explanation"] = explanation.strip()
+        else:
+            logger.warning(
+                f"'format.normalizer.terms[].explanation' in {profile_name} must be a non-empty string when provided."
+            )
+    return normalized
+
+
+def _normalize_format_normalizer(profile_name: str, value: object) -> dict[str, object]:
+    if not isinstance(value, dict):
+        logger.warning(
+            f"'format.normalizer' in {profile_name} must be a TOML table/dict."
+        )
+        return {}
+
+    normalized = _copy_unstructured_stage_keys(
+        value, excluded_keys={"keywords", "terms"}
+    )
+    terms: list[dict[str, str]] = []
+
+    keywords = value.get("keywords")
+    if keywords is not None:
+        if isinstance(keywords, list) and all(
+            isinstance(item, str) for item in keywords
+        ):
+            terms.extend(
+                {"value": item.strip()}
+                for item in keywords
+                if isinstance(item, str) and item.strip()
+            )
+        else:
+            logger.warning(
+                f"'format.normalizer.keywords' in {profile_name} must be a list of strings."
+            )
+
+    raw_terms = value.get("terms")
+    if raw_terms is not None:
+        if isinstance(raw_terms, list):
+            for item in raw_terms:
+                term = _normalize_normalizer_term(profile_name, item)
+                if term is not None:
+                    terms.append(term)
+        else:
+            logger.warning(
+                f"'format.normalizer.terms' in {profile_name} must be an array of strings or tables."
+            )
+
+    if terms:
+        normalized["terms"] = terms
+    return normalized
 
 
 def _merge_profiles(
@@ -170,7 +252,7 @@ def _normalize_stage_section(
 
     if stage_name == "format":
         normalized = _copy_unstructured_stage_keys(
-            section_value, excluded_keys={"extensions", "replacements"}
+            section_value, excluded_keys={"extensions", "replacements", "normalizer"}
         )
         if "extensions" in section_value:
             if isinstance(section_value["extensions"], dict):
@@ -188,6 +270,10 @@ def _normalize_stage_section(
                 logger.warning(
                     f"'format.replacements' in {profile_name} must be a TOML table/dict."
                 )
+        if "normalizer" in section_value:
+            normalized["normalizer"] = _normalize_format_normalizer(
+                profile_name, section_value["normalizer"]
+            )
         return normalized
 
     if stage_name == "translate":
@@ -294,8 +380,10 @@ def _normalize_profile_data(profile_name: str, data: dict) -> dict[str, dict]:
     if "corners" in data:
         if isinstance(data["corners"], list):
             # Auto-convert top-level [[corners]] to format extension config
-            corners_ext = normalized["format"].setdefault("extensions", {}).setdefault(
-                "corners", {}
+            corners_ext = (
+                normalized["format"]
+                .setdefault("extensions", {})
+                .setdefault("corners", {})
             )
             corners_ext.setdefault("enabled", True)
             corners_ext.setdefault("engine", "hybrid")
@@ -354,7 +442,7 @@ def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> 
     legacy_timing = {
         key: value
         for key, value in format_stage.items()
-        if key not in {"extensions", "replacements"}
+        if key not in {"extensions", "replacements", "normalizer"}
     }
     legacy_extensions = _merge_nested_dict(
         format_stage.get("extensions", {}),
@@ -368,5 +456,8 @@ def load_unified_profile(profile_name: str, visited: set[str] | None = None) -> 
         "extensions": legacy_extensions,
         "glossary": copy.deepcopy(translate_stage.get("glossary", {})),
         "replacements": copy.deepcopy(format_stage.get("replacements", {})),
-        "corners": format_stage.get("extensions", {}).get("corners", {}).get("segments", []),
+        "normalizer": copy.deepcopy(format_stage.get("normalizer", {})),
+        "corners": format_stage.get("extensions", {})
+        .get("corners", {})
+        .get("segments", []),
     }

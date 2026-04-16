@@ -155,6 +155,7 @@ enabled = true
         assert data["translate"]["glossary"] == {"鈴原希実": "Suzuhara Nozomi"}
         assert data["format"]["min_duration_ms"] == 900
         assert data["format"]["replacements"] == {"鈴原のぞみ": "鈴原希実"}
+        assert data["normalizer"] == {}
         assert data["format"]["extensions"]["radio_discourse"]["enabled"] is True
         assert data["postprocess"]["extensions"]["radio_discourse"]["enabled"] is True
     finally:

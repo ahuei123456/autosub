@@ -185,7 +185,10 @@ def test_run_uses_stage_grouped_profile_settings(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert format_kwargs["timing_config"] == {"min_duration_ms": 900}
     assert format_kwargs["extensions_config"] == {"radio_discourse": {"enabled": True}}
-    assert format_kwargs["replacements"] == {"鈴原のぞみ": "鈴原希実"}
+    assert format_kwargs["normalizer_config"] == {
+        "engine": "exact",
+        "replacements": {"鈴原のぞみ": "鈴原希実"},
+    }
     assert (
         cast(str, translate_kwargs["system_prompt"])
         == 'Keep honorifics consistent.\n\nGlossary (Always translate these exact phrases):\n- "鈴原希実" -> "Suzuhara Nozomi"\n'
@@ -248,6 +251,22 @@ def test_translate_accepts_openrouter_native_model_id(tmp_path, monkeypatch):
     assert captured["engine"] == "vertex"
     assert captured["provider"] == "openrouter"
     assert captured["model"] == "qwen/qwen3.6-plus:free"
+
+
+def test_extract_format_profile_config_rejects_llm_normalizer_with_replacements():
+    profile_data = {
+        "format": {
+            "normalizer": {"engine": "llm", "terms": [{"value": "鈴原希実"}]},
+            "replacements": {"鈴原のぞみ": "鈴原希実"},
+        }
+    }
+
+    try:
+        cli_module._extract_format_profile_config(profile_data)
+    except ValueError as exc:
+        assert "[format.replacements] cannot be combined" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for conflicting normalizer config.")
 
 
 def test_transcribe_supports_multiple_ranges(tmp_path, monkeypatch):

@@ -2,19 +2,29 @@ import json
 import logging
 from pathlib import Path
 
-from autosub.core.schemas import ReplacementSpan, SubtitleLine, TranscriptionResult
+from autosub.core.schemas import SubtitleLine, TranscriptionResult
 from autosub.pipeline.format import chunker
 from autosub.pipeline.format import generator
+from autosub.pipeline.format.normalizer import (
+    _apply_replacements_with_spans,
+    apply_normalization,
+)
 from autosub.pipeline.format.split_utils import find_split_time, partition_spans
 from autosub.pipeline.format.timing import apply_timing_rules
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["_apply_replacements_with_spans", "apply_split_after", "format_subtitles"]
 
 VALID_ENGINES: dict[str, set[str]] = {
     "radio_discourse": {"rules", "llm", "hybrid"},
     "corners": {"cues", "llm", "hybrid"},
 }
 TRAILING_SPLIT_PUNCTUATION = "。！？!?、,"
+
+
+def _stage_trace_path(output_ass_path: Path, stage_name: str) -> Path:
+    return output_ass_path.with_suffix(f".{stage_name}.llm_trace.jsonl")
 
 
 def _validate_engine(engine: str, extension: str, valid: set[str]) -> None:
@@ -80,7 +90,7 @@ def _apply_combined_extensions(
         if key not in combined_config and key in corners_config:
             combined_config[key] = corners_config[key]
     combined_config.setdefault("project_id", PROJECT_ID)
-    llm_trace_path = output_ass_path.with_suffix(".llm_trace.jsonl")
+    llm_trace_path = _stage_trace_path(output_ass_path, "combined")
     combined_config.setdefault("llm_trace_path", llm_trace_path)
     llm_trace_path.unlink(missing_ok=True)
 
@@ -145,76 +155,6 @@ def _initial_lines(transcript: TranscriptionResult) -> list[SubtitleLine]:
         logger.info("Using transcript segments as initial subtitle lines.")
         return _segments_to_lines(transcript)
     return chunker.chunk_words_to_lines(transcript.words)
-
-
-def _apply_replacements_with_spans(
-    text: str, replacements: dict[str, str]
-) -> tuple[str, list[ReplacementSpan]]:
-    """
-    Apply all replacements to text in a single pass, returning the replaced text
-    and a list of ReplacementSpan objects tracking each substitution.
-
-    Replacements are applied longest-source-first to resolve ambiguity when
-    multiple patterns could match at the same position. Overlapping matches are
-    skipped (first match wins).
-    """
-    if not replacements:
-        return text, []
-
-    # Collect all matches for all patterns
-    all_matches: list[tuple[int, int, str]] = []  # (start, end, old_str)
-    for old_str in replacements:
-        pos = 0
-        while True:
-            idx = text.find(old_str, pos)
-            if idx == -1:
-                break
-            all_matches.append((idx, idx + len(old_str), old_str))
-            pos = idx + 1
-
-    if not all_matches:
-        return text, []
-
-    # Sort by position; prefer longer match on ties (longest-first resolved by
-    # negative length as secondary key)
-    all_matches.sort(key=lambda m: (m[0], -(m[1] - m[0])))
-
-    # Accept non-overlapping matches
-    accepted: list[tuple[int, int, str]] = []
-    last_end = 0
-    for start, end, old_str in all_matches:
-        if start >= last_end:
-            accepted.append((start, end, old_str))
-            last_end = end
-
-    # Build replaced text and spans in one pass
-    result_parts: list[str] = []
-    spans: list[ReplacementSpan] = []
-    orig_pos = 0
-    replaced_pos = 0
-
-    for orig_start, orig_end, old_str in accepted:
-        new_str = replacements[old_str]
-        if orig_start > orig_pos:
-            chunk = text[orig_pos:orig_start]
-            result_parts.append(chunk)
-            replaced_pos += len(chunk)
-        result_parts.append(new_str)
-        spans.append(
-            ReplacementSpan(
-                orig_start=orig_start,
-                orig_end=orig_end,
-                replaced_start=replaced_pos,
-                replaced_end=replaced_pos + len(new_str),
-            )
-        )
-        replaced_pos += len(new_str)
-        orig_pos = orig_end
-
-    if orig_pos < len(text):
-        result_parts.append(text[orig_pos:])
-
-    return "".join(result_parts), spans
 
 
 def _split_line_after(line: SubtitleLine, split_after: list[str]) -> list[SubtitleLine]:
@@ -335,6 +275,7 @@ def format_subtitles(
     video_duration_ms: int | None = None,
     timing_config: dict | None = None,
     extensions_config: dict | None = None,
+    normalizer_config: dict | None = None,
     replacements: dict[str, str] | None = None,
 ) -> None:
     """
@@ -356,12 +297,23 @@ def format_subtitles(
     lines = _initial_lines(transcript)
     logger.info(f"Generated {len(lines)} subtitle lines.")
 
+    if replacements and normalizer_config:
+        raise ValueError(
+            "format_subtitles received both replacements and normalizer_config; use only one."
+        )
     if replacements:
-        logger.info(f"Applying {len(replacements)} text replacements...")
-        for line in lines:
-            new_text, spans = _apply_replacements_with_spans(line.text, replacements)
-            line.text = new_text
-            line.replacement_spans = spans
+        normalizer_config = {"engine": "exact", "replacements": replacements}
+    if normalizer_config:
+        normalizer_engine = str(normalizer_config.get("engine", "exact")).lower()
+        if normalizer_engine == "llm":
+            from autosub.core.config import PROJECT_ID
+
+            llm_trace_path = _stage_trace_path(output_ass_path, "normalizer")
+            llm_trace_path.unlink(missing_ok=True)
+            normalizer_config = dict(normalizer_config)
+            normalizer_config.setdefault("project_id", PROJECT_ID)
+            normalizer_config.setdefault("llm_trace_path", llm_trace_path)
+        lines = apply_normalization(lines, normalizer_config)
 
     if not extensions_config:
         extensions_config = {}
@@ -391,7 +343,7 @@ def format_subtitles(
         from autosub.extensions.radio_discourse.main import apply_radio_discourse
 
         if radio_engine in {"llm", "hybrid"}:
-            llm_trace_path = output_ass_path.with_suffix(".llm_trace.jsonl")
+            llm_trace_path = _stage_trace_path(output_ass_path, "radio_discourse")
             radio_discourse_config = dict(radio_discourse_config)
             radio_discourse_config.setdefault("llm_trace_path", llm_trace_path)
             llm_trace_path.unlink(missing_ok=True)
@@ -411,7 +363,7 @@ def format_subtitles(
             from autosub.extensions.corners.main import apply_corners
 
             if corners_engine in {"llm", "hybrid"}:
-                llm_trace_path = output_ass_path.with_suffix(".llm_trace.jsonl")
+                llm_trace_path = _stage_trace_path(output_ass_path, "corners")
                 llm_trace_path.unlink(missing_ok=True)
                 corners_config = dict(corners_config)
                 corners_config.setdefault("llm_trace_path", llm_trace_path)
@@ -437,7 +389,11 @@ def format_subtitles(
 
     logger.info(f"Writing .ass file to {output_ass_path}...")
     generator.generate_ass_file(lines, output_ass_path)
-    llm_trace_path = output_ass_path.with_suffix(".llm_trace.jsonl")
-    if llm_trace_path.exists():
-        logger.info(f"Wrote LLM trace to {llm_trace_path}.")
+    trace_paths = [
+        _stage_trace_path(output_ass_path, name)
+        for name in ("normalizer", "radio_discourse", "corners", "combined")
+    ]
+    for trace_path in trace_paths:
+        if trace_path.exists():
+            logger.info(f"Wrote LLM trace to {trace_path}.")
     logger.info("Subtitle formatting complete!")
