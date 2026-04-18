@@ -90,6 +90,58 @@ def test_pass1_keyframe_hit_and_merge():
     assert result[0].end_time >= 0.5
 
 
+def test_min_duration_does_not_merge_listener_mail_into_host():
+    lines = [
+        SubtitleLine(
+            text="のんばんは？",
+            start_time=0.1,
+            end_time=0.3,
+            speaker=None,
+            role="host",
+        ),
+        SubtitleLine(
+            text="初メールです。",
+            start_time=0.3,
+            end_time=0.5,
+            speaker=None,
+            role="listener_mail",
+        ),
+    ]
+
+    result = apply_timing_rules(lines, min_duration_ms=500, video_duration_ms=2000)
+
+    assert len(result) == 2
+    assert result[0].text == "のんばんは？"
+    assert result[1].text == "初メールです。"
+    assert result[0].role == "host"
+    assert result[1].role == "listener_mail"
+
+
+def test_min_duration_can_still_merge_when_roles_match():
+    lines = [
+        SubtitleLine(
+            text="L1",
+            start_time=0.1,
+            end_time=0.3,
+            speaker=None,
+            role="host",
+        ),
+        SubtitleLine(
+            text="L2",
+            start_time=0.3,
+            end_time=0.5,
+            speaker=None,
+            role="host",
+        ),
+    ]
+
+    result = apply_timing_rules(lines, min_duration_ms=500, video_duration_ms=2000)
+
+    assert len(result) == 1
+    assert result[0].text == "L1 L2"
+    assert result[0].role == "host"
+
+
 def test_pass1_proportional_gap_division():
     # L1: 0.5 to 0.7 (200ms). Needs 300ms padding.
     # Gap: 0.7 to 0.9 (200ms).

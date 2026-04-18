@@ -31,6 +31,18 @@ class ProposedExtension:
         self.lead_out = 0
 
 
+def _roles_compatible_for_merge(left_role: str | None, right_role: str | None) -> bool:
+    """
+    Allow merge when roles are identical or unavailable.
+
+    When radio_discourse has already labeled lines, merging across role boundaries
+    would collapse distinct speaker functions such as listener mail into host/meta.
+    """
+    if left_role is None or right_role is None:
+        return True
+    return left_role == right_role
+
+
 def _get_prev_keyframe(time_ms: int, keyframes: List[int]) -> Optional[int]:
     """Finds the closest keyframe before or at the given time."""
     for k in reversed(keyframes):
@@ -201,12 +213,12 @@ def _apply_min_duration_padding(
         duration = seg.end_ms - seg.start_ms
         if duration < min_duration_ms:
             if i < len(segments) - 1:
-                # Merge with the next segment
                 next_seg = segments[i + 1]
-                # Combine text
-                seg.text = f"{seg.text} {next_seg.text}".strip()
-                seg.end_ms = next_seg.end_ms
-                skip_next = True
+                if _roles_compatible_for_merge(seg.role, next_seg.role):
+                    # Merge with the next segment when semantic role stays compatible.
+                    seg.text = f"{seg.text} {next_seg.text}".strip()
+                    seg.end_ms = next_seg.end_ms
+                    skip_next = True
             else:
                 pass  # Final Segment edge case
         merged_segments.append(seg)
