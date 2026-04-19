@@ -233,3 +233,62 @@ def test_format_subtitles_keeps_legacy_word_chunking_for_non_whisperx(tmp_path):
     ]
     assert len(dialogue_events) == 1
     assert dialogue_events[0].text == "おすすめです。"
+
+
+def test_format_subtitles_merges_multiple_inputs_after_initial_line_generation(
+    tmp_path,
+):
+    transcript_path_a = tmp_path / "transcript_a.json"
+    transcript_path_b = tmp_path / "transcript_b.json"
+    output_path = tmp_path / "original.ass"
+
+    transcript_path_a.write_text(
+        json.dumps(
+            {
+                "words": [
+                    {"word": "IGNORED", "start_time": 10.0, "end_time": 11.0},
+                ],
+                "segments": [
+                    {
+                        "text": "whisperx segment",
+                        "start_time": 10.0,
+                        "end_time": 11.0,
+                        "words": [
+                            {"word": "whisperx", "start_time": 10.0, "end_time": 10.5},
+                            {"word": "segment", "start_time": 10.5, "end_time": 11.0},
+                        ],
+                        "kind": "sentence",
+                    }
+                ],
+                "metadata": {"backend": "whisperx", "language": "ja"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    transcript_path_b.write_text(
+        json.dumps(
+            {
+                "words": [
+                    {"word": "おすすめ", "start_time": 0.0, "end_time": 0.6},
+                    {"word": "です。", "start_time": 0.6, "end_time": 1.0},
+                ],
+                "metadata": {"backend": "chirp_2", "language": "ja-JP"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    format_subtitles([transcript_path_a, transcript_path_b], output_path)
+
+    with open(output_path, "r", encoding="utf-8") as handle:
+        script = pyass.load(handle)
+
+    dialogue_events = [
+        event for event in script.events if isinstance(event, pyass.Event)
+    ]
+    assert [event.text for event in dialogue_events] == [
+        "おすすめです。",
+        "whisperx segment",
+    ]

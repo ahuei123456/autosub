@@ -18,7 +18,11 @@ from autosub.pipeline.transcribe import api, audio, gcs, whisperx_backend
 logger = logging.getLogger(__name__)
 
 DEFAULT_TRANSCRIPTION_BACKEND = "chirp_2"
-SUPPORTED_TRANSCRIPTION_BACKENDS = {DEFAULT_TRANSCRIPTION_BACKEND, "chirp_3", "whisperx"}
+SUPPORTED_TRANSCRIPTION_BACKENDS = {
+    DEFAULT_TRANSCRIPTION_BACKEND,
+    "chirp_3",
+    "whisperx",
+}
 CHIRP_BACKENDS = {"chirp_2", "chirp_3"}
 MAX_CONCURRENT_TRANSCRIPTION_JOBS = 4
 MAX_CONCURRENT_WHISPERX_JOBS = 1
@@ -104,9 +108,7 @@ def _parse_words(
             for word_info in alt.words:
                 raw_start = _duration_seconds(word_info.start_offset)
                 raw_end = _duration_seconds(word_info.end_offset)
-                start, end = _clamp_word_timestamps(
-                    raw_start, raw_end, chunk_duration
-                )
+                start, end = _clamp_word_timestamps(raw_start, raw_end, chunk_duration)
                 if (start, end) != (raw_start, raw_end):
                     clamped_count += 1
                 words_data.append(
@@ -155,9 +157,7 @@ def _parse_chirp_segments(
         for word_info in getattr(alternative, "words", []):
             raw_start = _duration_seconds(word_info.start_offset)
             raw_end = _duration_seconds(word_info.end_offset)
-            start, end = _clamp_word_timestamps(
-                raw_start, raw_end, chunk_duration
-            )
+            start, end = _clamp_word_timestamps(raw_start, raw_end, chunk_duration)
             if (start, end) != (raw_start, raw_end):
                 clamped_count += 1
             segment_words.append(
@@ -297,6 +297,7 @@ def _transcribe_time_range(
 
         if not project_id:
             raise ValueError("GOOGLE_CLOUD_PROJECT is not set in the environment.")
+        project_id_str = project_id
 
         if duration > 60:
             if not GCS_BUCKET:
@@ -321,11 +322,11 @@ def _transcribe_time_range(
                         audio.MAX_CHUNK_MINUTES,
                     )
 
-                    chunk_results: dict[int, tuple[list[TranscribedWord], list[TranscriptionSegment]]] = {}
+                    chunk_results: dict[
+                        int, tuple[list[TranscribedWord], list[TranscriptionSegment]]
+                    ] = {}
                     chunk_failures: list[tuple[int, Exception]] = []
-                    max_workers = min(
-                        MAX_CONCURRENT_TRANSCRIPTION_JOBS, len(chunks)
-                    )
+                    max_workers = min(MAX_CONCURRENT_TRANSCRIPTION_JOBS, len(chunks))
 
                     def _transcribe_chunk(
                         chunk_idx: int,
@@ -333,23 +334,19 @@ def _transcribe_time_range(
                         chunk_start: float,
                     ) -> tuple[int, list[TranscribedWord], list[TranscriptionSegment]]:
                         chunk_duration = audio.get_audio_duration(chunk_path)
-                        gcs_dest = (
-                            f"autosub_staging/{uuid4()}_{chunk_path.name}"
-                        )
+                        gcs_dest = f"autosub_staging/{uuid4()}_{chunk_path.name}"
                         logger.info(
                             "  Chunk %d/%d: uploading to %s...",
                             chunk_idx + 1,
                             len(chunks),
                             gcs_dest,
                         )
-                        gcs_uri = gcs.upload_to_gcs(
-                            gcs_bucket, chunk_path, gcs_dest
-                        )
+                        gcs_uri = gcs.upload_to_gcs(gcs_bucket, chunk_path, gcs_dest)
                         chunk_offset = chunk_start + time_range.offset_seconds
                         try:
                             response = api.transcribe_uri(
                                 gcs_uri,
-                                project_id,
+                                project_id_str,
                                 language_code,
                                 vocabulary,
                                 num_speakers,
@@ -368,16 +365,12 @@ def _transcribe_time_range(
                                 ),
                             )
                         finally:
-                            logger.info(
-                                "  Cleaning up %s...", gcs_dest
-                            )
+                            logger.info("  Cleaning up %s...", gcs_dest)
                             gcs.delete_from_gcs(gcs_bucket, gcs_uri)
 
                     with ThreadPoolExecutor(max_workers=max_workers) as executor:
                         futures = {
-                            executor.submit(
-                                _transcribe_chunk, idx, path, start
-                            ): idx
+                            executor.submit(_transcribe_chunk, idx, path, start): idx
                             for idx, (path, start) in enumerate(chunks)
                         }
                         for future in as_completed(futures):
@@ -391,8 +384,7 @@ def _transcribe_time_range(
                     if chunk_failures:
                         chunk_failures.sort(key=lambda item: item[0])
                         msgs = ", ".join(
-                            f"chunk {i + 1}: {exc}"
-                            for i, exc in chunk_failures
+                            f"chunk {i + 1}: {exc}" for i, exc in chunk_failures
                         )
                         raise RuntimeError(
                             f"One or more audio chunks failed: {msgs}"
@@ -421,7 +413,11 @@ def _transcribe_time_range(
 
             try:
                 response = api.transcribe_uri(
-                    gcs_uri, project_id, language_code, vocabulary, num_speakers,
+                    gcs_uri,
+                    project_id_str,
+                    language_code,
+                    vocabulary,
+                    num_speakers,
                     model=transcription_backend,
                 )
                 chirp_results = response.results[
@@ -443,7 +439,11 @@ def _transcribe_time_range(
             audio_content = handle.read()
 
         response = api.transcribe_local_file(
-            audio_content, project_id, language_code, vocabulary, num_speakers,
+            audio_content,
+            project_id_str,
+            language_code,
+            vocabulary,
+            num_speakers,
             model=transcription_backend,
         )
         return TranscriptionResult(
@@ -590,9 +590,7 @@ def transcribe(
             backend=cast(Any, resolved_backend),
             language=language_code,
             model=(
-                whisper_model
-                if resolved_backend == "whisperx"
-                else resolved_backend
+                whisper_model if resolved_backend == "whisperx" else resolved_backend
             ),
         ),
     )
@@ -607,5 +605,3 @@ def transcribe(
         handle.write(final_result.model_dump_json(indent=2))
 
     return final_result
-
-
