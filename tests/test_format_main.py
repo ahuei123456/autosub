@@ -292,3 +292,33 @@ def test_format_subtitles_merges_multiple_inputs_after_initial_line_generation(
         "おすすめです。",
         "whisperx segment",
     ]
+
+
+def test_format_subtitles_warns_when_same_input_file_is_passed_twice(tmp_path, caplog):
+    transcript_path = tmp_path / "transcript.json"
+    output_path = tmp_path / "original.ass"
+
+    transcript_path.write_text(
+        json.dumps(
+            {
+                "words": [
+                    {"word": "おすすめ", "start_time": 0.0, "end_time": 0.6},
+                    {"word": "です。", "start_time": 0.6, "end_time": 1.0},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    format_subtitles([transcript_path, transcript_path], output_path)
+
+    assert "Duplicate transcript input detected" in caplog.text
+
+    with open(output_path, "r", encoding="utf-8") as handle:
+        script = pyass.load(handle)
+
+    dialogue_events = [
+        event for event in script.events if isinstance(event, pyass.Event)
+    ]
+    assert len(dialogue_events) == 2

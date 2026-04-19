@@ -185,7 +185,19 @@ def _initial_lines_from_inputs(
         raise ValueError("At least one transcript JSON path is required.")
 
     merged_lines: list[SubtitleLine] = []
+    seen_resolved_paths: dict[Path, Path] = {}
     for input_json_path in normalized_paths:
+        resolved_path = input_json_path.resolve()
+        first_seen_path = seen_resolved_paths.get(resolved_path)
+        if first_seen_path is not None:
+            logger.warning(
+                "Duplicate transcript input detected: %s resolves to the same file as %s.",
+                input_json_path,
+                first_seen_path,
+            )
+        else:
+            seen_resolved_paths[resolved_path] = input_json_path
+
         transcript = _load_transcript(input_json_path)
         transcript_lines = _initial_lines(transcript)
         logger.info(
@@ -311,7 +323,7 @@ def _normalize_split_text(text: str, *, ensure_terminal_punctuation: bool) -> st
 
 
 def format_subtitles(
-    input_json_path: Path | Sequence[Path],
+    input_json_paths: Path | Sequence[Path],
     output_ass_path: Path,
     keyframes: list[int] | None = None,
     video_duration_ms: int | None = None,
@@ -324,9 +336,11 @@ def format_subtitles(
     Reads one or more transcript.json files, chunks the transcribed words into
     semantic lines, merges the initial line sets, applies timing rules (gap
     snapping, min duration, keyframes), and generates an output .ass subtitle file.
+    Inputs should be disjoint or cleanly offset in time; overlapping ranges will
+    be interleaved without dedup.
     """
     logger.info("Chunking transcript into semantic subtitle lines...")
-    lines = _initial_lines_from_inputs(input_json_path)
+    lines = _initial_lines_from_inputs(input_json_paths)
     logger.info(f"Generated {len(lines)} subtitle lines.")
 
     if replacements and normalizer_config:
