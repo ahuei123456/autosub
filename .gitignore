@@ -258,3 +258,4 @@ __marimo__/
 *.jsonl
 *.ass
 *.txt
+*.tsv
