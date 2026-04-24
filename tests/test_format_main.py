@@ -322,3 +322,50 @@ def test_format_subtitles_warns_when_same_input_file_is_passed_twice(tmp_path, c
         event for event in script.events if isinstance(event, pyass.Event)
     ]
     assert len(dialogue_events) == 2
+
+
+def test_format_subtitles_warns_when_input_time_ranges_overlap(tmp_path, caplog):
+    transcript_path_a = tmp_path / "transcript_a.json"
+    transcript_path_b = tmp_path / "transcript_b.json"
+    output_path = tmp_path / "original.ass"
+
+    transcript_path_a.write_text(
+        json.dumps(
+            {
+                "words": [
+                    {"word": "first", "start_time": 0.0, "end_time": 1.0},
+                    {"word": "range", "start_time": 1.0, "end_time": 2.0},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    transcript_path_b.write_text(
+        json.dumps(
+            {
+                "words": [
+                    {"word": "overlap", "start_time": 1.5, "end_time": 2.0},
+                    {"word": "range", "start_time": 2.0, "end_time": 2.5},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    format_subtitles([transcript_path_a, transcript_path_b], output_path)
+
+    assert "Transcript time ranges overlap" in caplog.text
+    assert "lines will be interleaved without dedup" in caplog.text
+
+
+def test_format_subtitles_warns_when_input_produces_zero_lines(tmp_path, caplog):
+    transcript_path = tmp_path / "empty_transcript.json"
+    output_path = tmp_path / "original.ass"
+
+    transcript_path.write_text(json.dumps({}), encoding="utf-8")
+
+    format_subtitles(transcript_path, output_path)
+
+    assert "Transcript produced zero initial subtitle lines" in caplog.text

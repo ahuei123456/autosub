@@ -185,6 +185,7 @@ def _initial_lines_from_inputs(
         raise ValueError("At least one transcript JSON path is required.")
 
     merged_lines: list[SubtitleLine] = []
+    input_ranges: list[tuple[Path, float, float]] = []
     seen_resolved_paths: dict[Path, Path] = {}
     for input_json_path in normalized_paths:
         resolved_path = input_json_path.resolve()
@@ -205,10 +206,46 @@ def _initial_lines_from_inputs(
             len(transcript_lines),
             input_json_path,
         )
+        if not transcript_lines:
+            logger.warning(
+                "Transcript produced zero initial subtitle lines: %s.",
+                input_json_path,
+            )
+        else:
+            input_ranges.append(
+                (
+                    input_json_path,
+                    min(line.start_time for line in transcript_lines),
+                    max(line.end_time for line in transcript_lines),
+                )
+            )
         merged_lines.extend(transcript_lines)
 
+    _warn_for_overlapping_input_ranges(input_ranges)
     merged_lines.sort(key=lambda line: (line.start_time, line.end_time))
     return merged_lines
+
+
+def _warn_for_overlapping_input_ranges(
+    input_ranges: list[tuple[Path, float, float]],
+) -> None:
+    sorted_ranges = sorted(input_ranges, key=lambda item: (item[1], item[2]))
+    previous_path: Path | None = None
+    previous_end = 0.0
+
+    for path, start, end in sorted_ranges:
+        if previous_path is not None and start < previous_end:
+            logger.warning(
+                "Transcript time ranges overlap: %s ends at %.2fs but %s starts at "
+                "%.2fs; lines will be interleaved without dedup.",
+                previous_path,
+                previous_end,
+                path,
+                start,
+            )
+        if previous_path is None or end > previous_end:
+            previous_path = path
+            previous_end = end
 
 
 def _split_line_after(line: SubtitleLine, split_after: list[str]) -> list[SubtitleLine]:
