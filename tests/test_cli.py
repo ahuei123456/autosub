@@ -1,6 +1,8 @@
+import json
 import logging
 import os
 import autosub.cli as cli_module
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 from typer.testing import CliRunner
@@ -137,6 +139,39 @@ def test_run_model_infers_provider(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert captured["provider"] == "openai"
     assert captured["model"] == "gpt-5-mini"
+
+
+def test_format_accepts_multiple_input_transcripts(tmp_path, monkeypatch):
+    transcript_a = tmp_path / "transcript_a.json"
+    transcript_b = tmp_path / "transcript_b.json"
+    output_path = tmp_path / "merged.ass"
+    transcript_a.write_text(json.dumps({"words": []}), encoding="utf-8")
+    transcript_b.write_text(json.dumps({"words": []}), encoding="utf-8")
+
+    captured_args: tuple[object, ...] | None = None
+    captured_kwargs: dict[str, object] = {}
+
+    def fake_format_subtitles(*args, **kwargs):
+        nonlocal captured_args
+        captured_args = args
+        captured_kwargs.update(kwargs)
+
+    monkeypatch.setattr(
+        cli_module.format_module, "format_subtitles", fake_format_subtitles
+    )
+
+    result = runner.invoke(
+        app,
+        ["format", str(transcript_a), str(transcript_b), "--out", str(output_path)],
+    )
+
+    assert result.exit_code == 0
+    assert captured_args is not None
+    assert cast(list[Path], captured_args[0]) == [transcript_a, transcript_b]
+    assert captured_args[1] == output_path
+    assert captured_kwargs["timing_config"] == {}
+    assert captured_kwargs["extensions_config"] == {}
+    assert captured_kwargs["normalizer_config"] == {}
 
 
 def test_run_uses_stage_grouped_profile_settings(tmp_path, monkeypatch):

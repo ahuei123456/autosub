@@ -1,6 +1,7 @@
 import json
 import logging
 from pathlib import Path
+from typing import Sequence
 
 from autosub.core.schemas import SubtitleLine, TranscriptionResult
 from autosub.pipeline.format import chunker
@@ -161,6 +162,92 @@ def _initial_lines(transcript: TranscriptionResult) -> list[SubtitleLine]:
     return chunker.chunk_words_to_lines(transcript.words)
 
 
+def _load_transcript(input_json_path: Path) -> TranscriptionResult:
+    if not input_json_path.exists():
+        raise FileNotFoundError(f"Transcript JSON file not found: {input_json_path}")
+
+    logger.info("Loading transcript from %s...", input_json_path)
+    with input_json_path.open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+
+    return TranscriptionResult(**data)
+
+
+def _initial_lines_from_inputs(
+    input_json_paths: Path | Sequence[Path],
+) -> list[SubtitleLine]:
+    if isinstance(input_json_paths, Path):
+        normalized_paths = [input_json_paths]
+    else:
+        normalized_paths = list(input_json_paths)
+
+    if not normalized_paths:
+        raise ValueError("At least one transcript JSON path is required.")
+
+    merged_lines: list[SubtitleLine] = []
+    input_ranges: list[tuple[Path, float, float]] = []
+    seen_resolved_paths: dict[Path, Path] = {}
+    for input_json_path in normalized_paths:
+        resolved_path = input_json_path.resolve()
+        first_seen_path = seen_resolved_paths.get(resolved_path)
+        if first_seen_path is not None:
+            logger.warning(
+                "Duplicate transcript input detected: %s resolves to the same file as %s.",
+                input_json_path,
+                first_seen_path,
+            )
+        else:
+            seen_resolved_paths[resolved_path] = input_json_path
+
+        transcript = _load_transcript(input_json_path)
+        transcript_lines = _initial_lines(transcript)
+        logger.info(
+            "Generated %d initial subtitle lines from %s.",
+            len(transcript_lines),
+            input_json_path,
+        )
+        if not transcript_lines:
+            logger.warning(
+                "Transcript produced zero initial subtitle lines: %s.",
+                input_json_path,
+            )
+        else:
+            input_ranges.append(
+                (
+                    input_json_path,
+                    min(line.start_time for line in transcript_lines),
+                    max(line.end_time for line in transcript_lines),
+                )
+            )
+        merged_lines.extend(transcript_lines)
+
+    _warn_for_overlapping_input_ranges(input_ranges)
+    merged_lines.sort(key=lambda line: (line.start_time, line.end_time))
+    return merged_lines
+
+
+def _warn_for_overlapping_input_ranges(
+    input_ranges: list[tuple[Path, float, float]],
+) -> None:
+    sorted_ranges = sorted(input_ranges, key=lambda item: (item[1], item[2]))
+    previous_path: Path | None = None
+    previous_end = 0.0
+
+    for path, start, end in sorted_ranges:
+        if previous_path is not None and start < previous_end:
+            logger.warning(
+                "Transcript time ranges overlap: %s ends at %.2fs but %s starts at "
+                "%.2fs; lines will be interleaved without dedup.",
+                previous_path,
+                previous_end,
+                path,
+                start,
+            )
+        if previous_path is None or end > previous_end:
+            previous_path = path
+            previous_end = end
+
+
 def _split_line_after(line: SubtitleLine, split_after: list[str]) -> list[SubtitleLine]:
     """Split a single line after every occurrence of any phrase in split_after."""
     return _split_line_after_with_options(
@@ -273,7 +360,7 @@ def _normalize_split_text(text: str, *, ensure_terminal_punctuation: bool) -> st
 
 
 def format_subtitles(
-    input_json_path: Path,
+    input_json_paths: Path | Sequence[Path],
     output_ass_path: Path,
     keyframes: list[int] | None = None,
     video_duration_ms: int | None = None,
@@ -283,22 +370,14 @@ def format_subtitles(
     replacements: dict[str, str] | None = None,
 ) -> None:
     """
-    Reads a transcript.json file, chunks the transcribed words into semantic lines,
-    applies timing rules (gap snapping, min duration, keyframes),
-    and generates an output .ass subtitle file.
+    Reads one or more transcript.json files, chunks the transcribed words into
+    semantic lines, merges the initial line sets, applies timing rules (gap
+    snapping, min duration, keyframes), and generates an output .ass subtitle file.
+    Inputs should be disjoint or cleanly offset in time; overlapping ranges will
+    be interleaved without dedup.
     """
-    if not input_json_path.exists():
-        raise FileNotFoundError(f"Transcript JSON file not found: {input_json_path}")
-
-    logger.info(f"Loading transcript from {input_json_path}...")
-    with open(input_json_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-
-    # Validate against Pydantic schema
-    transcript = TranscriptionResult(**data)
-
     logger.info("Chunking transcript into semantic subtitle lines...")
-    lines = _initial_lines(transcript)
+    lines = _initial_lines_from_inputs(input_json_paths)
     logger.info(f"Generated {len(lines)} subtitle lines.")
 
     if replacements and normalizer_config:
