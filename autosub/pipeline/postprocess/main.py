@@ -4,65 +4,63 @@ import logging
 import re
 from pathlib import Path
 
-import pyass
+from autosub.core.schemas import SubtitleDocument
+from autosub.pipeline.format.generator import render_ass_document
 
 logger = logging.getLogger(__name__)
 
-BILINGUAL_TRANSLATION_TAG = r"{\fs48\a2}"
 QUOTE_CHARS = {'"', "“", "”"}
 LINE_BREAK_RE = re.compile(r"(\\N|\\n|\r\n|\n|\r)")
 
 
 def postprocess_subtitles(
-    input_ass_path: Path,
+    input_json_path: Path,
+    output_json_path: Path | None = None,
     output_ass_path: Path | None = None,
     extensions_config: dict | None = None,
     bilingual: bool = True,
 ) -> None:
+    if output_json_path is None:
+        output_json_path = input_json_path.with_name("postprocessed.json")
     if output_ass_path is None:
-        output_ass_path = input_ass_path
+        output_ass_path = output_json_path.with_suffix(".ass")
 
-    if not extensions_config:
-        return
+    document = SubtitleDocument.model_validate_json(
+        input_json_path.read_text(encoding="utf-8")
+    )
+    processed = document.model_copy(deep=True)
+    processed.stage = "postprocessed"
+    for cue in processed.cues:
+        cue.final_text = cue.final_text or cue.translated_text
 
-    with open(input_ass_path, "r", encoding="utf-8") as handle:
-        script = pyass.load(handle)
-
-    modified = False
-
+    extensions_config = extensions_config or {}
     radio_discourse_config = extensions_config.get("radio_discourse", {})
     if radio_discourse_config.get("enabled"):
-        modified = _apply_radio_discourse_postprocess(script, bilingual) or modified
+        if _apply_radio_discourse_postprocess(processed):
+            logger.info("Postprocessing modified subtitle document.")
 
-    if not modified:
-        return
+    logger.info(f"Writing postprocessed JSON to {output_json_path}...")
+    output_json_path.write_text(processed.model_dump_json(indent=2), encoding="utf-8")
 
     logger.info(f"Writing postprocessed subtitles to {output_ass_path}...")
-    with open(output_ass_path, "w", encoding="utf-8") as handle:
-        pyass.dump(script, handle)
+    render_ass_document(
+        processed, output_ass_path, mode="bilingual" if bilingual else "final"
+    )
 
 
-def _apply_radio_discourse_postprocess(script: pyass.Script, bilingual: bool) -> bool:
+def _apply_radio_discourse_postprocess(document: SubtitleDocument) -> bool:
     modified = False
-    for event in script.events:
-        if not isinstance(event, pyass.Event) or not event.text:
+    for cue in document.cues:
+        if cue.role != "listener_mail":
             continue
-        if event.name != "listener_mail":
+        if not cue.final_text:
             continue
 
-        quoted = _quote_listener_mail_text(event.text, bilingual=bilingual)
-        if quoted != event.text:
-            event.text = quoted
+        quoted = _ensure_quoted(cue.final_text)
+        if quoted != cue.final_text:
+            cue.final_text = quoted
             modified = True
     return modified
-
-
-def _quote_listener_mail_text(text: str, bilingual: bool) -> str:
-    if bilingual and BILINGUAL_TRANSLATION_TAG in text:
-        prefix, translated = text.rsplit(BILINGUAL_TRANSLATION_TAG, 1)
-        return f"{prefix}{BILINGUAL_TRANSLATION_TAG}{_ensure_quoted(translated)}"
-
-    return _ensure_quoted(text)
 
 
 def _ensure_quoted(text: str) -> str:

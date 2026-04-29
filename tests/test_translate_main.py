@@ -4,8 +4,10 @@ import pytest
 import autosub.pipeline.translate.main as translate_main_module
 import autosub.pipeline.translate.translator as translator_module
 
+from autosub.core.schemas import SubtitleCue, SubtitleDocument
 from autosub.pipeline.translate.main import (
-    _compute_fingerprint,
+    _compute_cue_fingerprint,
+    _extract_corner_boundaries_from_cues,
     _translate_chunked,
     _load_checkpoint,
     _save_checkpoint,
@@ -14,11 +16,18 @@ from autosub.pipeline.translate.main import (
 )
 
 
+def _fake_translate_cues(self, cues: list[SubtitleCue]) -> list[str]:
+    texts = [cue.normalized_source_text or cue.source_text for cue in cues]
+    return self.translate(texts)
+
+
 class FakeTranslator:
     """Translator that returns prefixed text."""
 
     def translate(self, texts: list[str]) -> list[str]:
         return [f"translated:{t}" for t in texts]
+
+    translate_cues = _fake_translate_cues
 
 
 class FailNTimesTranslator:
@@ -33,6 +42,36 @@ class FailNTimesTranslator:
         if self.attempts <= self.fail_count:
             raise ConnectionError("Server disconnected without sending a response.")
         return [f"translated:{t}" for t in texts]
+
+    translate_cues = _fake_translate_cues
+
+
+def _write_formatted_document(path):
+    document = SubtitleDocument(
+        stage="formatted",
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0.0,
+                end_time=1.0,
+                source_text="こんにちは",
+                normalized_source_text="こんにちは",
+            )
+        ],
+    )
+    path.write_text(document.model_dump_json(indent=2), encoding="utf-8")
+
+
+def _cues_from_texts(texts: list[str]) -> list[SubtitleCue]:
+    return [
+        SubtitleCue(
+            id=f"cue-{index + 1:05d}",
+            start_time=float(index),
+            end_time=float(index + 1),
+            source_text=text,
+        )
+        for index, text in enumerate(texts)
+    ]
 
 
 # --- Error report tests ---
@@ -59,7 +98,12 @@ def test_chunked_splits_and_merges(tmp_path):
     texts = [f"line{i}" for i in range(5)]
     checkpoint_path = tmp_path / "test.checkpoint.json"
 
-    result, splits = _translate_chunked(translator, texts, chunk_size=2, checkpoint_path=checkpoint_path)
+    result, splits = _translate_chunked(
+        translator,
+        _cues_from_texts(texts),
+        chunk_size=2,
+        checkpoint_path=checkpoint_path,
+    )
 
     assert result == [f"translated:line{i}" for i in range(5)]
     # Checkpoint should still exist (caller is responsible for cleanup)
@@ -73,7 +117,10 @@ def test_chunked_fails_fast_on_error(tmp_path):
 
     with pytest.raises(ConnectionError):
         _translate_chunked(
-            translator, texts, chunk_size=2, checkpoint_path=checkpoint_path
+            translator,
+            _cues_from_texts(texts),
+            chunk_size=2,
+            checkpoint_path=checkpoint_path,
         )
 
     assert translator.attempts == 1
@@ -85,11 +132,61 @@ def test_chunked_preserves_order(tmp_path):
     texts = [f"line{i}" for i in range(10)]
     checkpoint_path = tmp_path / "test.checkpoint.json"
 
-    result, splits = _translate_chunked(translator, texts, chunk_size=3, checkpoint_path=checkpoint_path)
+    result, splits = _translate_chunked(
+        translator,
+        _cues_from_texts(texts),
+        chunk_size=3,
+        checkpoint_path=checkpoint_path,
+    )
 
     assert len(result) == 10
     for i in range(10):
         assert result[i] == f"translated:line{i}"
+
+
+def test_chunked_uses_translate_cues_with_structured_metadata(tmp_path):
+    class CueTrackingTranslator:
+        def __init__(self):
+            self.seen_roles: list[str | None] = []
+
+        def translate_cues(self, cues: list[SubtitleCue]) -> list[str]:
+            self.seen_roles.extend(cue.role for cue in cues)
+            return [
+                f"{cue.role}:{cue.normalized_source_text or cue.source_text}"
+                for cue in cues
+            ]
+
+    translator = CueTrackingTranslator()
+    cues = [
+        SubtitleCue(
+            id="cue-00001",
+            start_time=0,
+            end_time=1,
+            source_text="a",
+            role="host",
+        ),
+        SubtitleCue(
+            id="cue-00002",
+            start_time=1,
+            end_time=2,
+            source_text="b",
+            role="listener_mail",
+        ),
+        SubtitleCue(
+            id="cue-00003",
+            start_time=2,
+            end_time=3,
+            source_text="c",
+            role="host",
+        ),
+    ]
+
+    result, _ = _translate_chunked(
+        translator, cues, chunk_size=2, checkpoint_path=tmp_path / "checkpoint.json"
+    )
+
+    assert translator.seen_roles == ["host", "listener_mail", "host"]
+    assert result == ["host:a", "listener_mail:b", "host:c"]
 
 
 # --- Checkpoint tests ---
@@ -187,7 +284,9 @@ def test_chunked_resumes_from_checkpoint(tmp_path):
     """Simulate a previous run that completed chunks 0 and 1, then resume."""
     checkpoint_path = tmp_path / "test.checkpoint.json"
     texts = ["a", "b", "c", "d", "e", "f"]
-    fp = _compute_fingerprint(texts, chunk_size=2, corner_boundaries=None)
+    fp = _compute_cue_fingerprint(
+        _cues_from_texts(texts), chunk_size=2, corner_boundaries=None
+    )
 
     # Pre-populate checkpoint with chunks 0 and 1 already done
     existing = {
@@ -196,18 +295,23 @@ def test_chunked_resumes_from_checkpoint(tmp_path):
     }
     _save_checkpoint(checkpoint_path, existing, fp)
 
-    # Track which texts the translator actually receives
+    # Track which cues the translator actually receives
     translated_inputs = []
-    original_translate = FakeTranslator.translate
+    original_translate_cues = FakeTranslator.translate_cues
 
-    def tracking_translate(self, texts):
-        translated_inputs.extend(texts)
-        return original_translate(self, texts)
+    def tracking_translate_cues(self, cues):
+        translated_inputs.extend(cue.source_text for cue in cues)
+        return original_translate_cues(self, cues)
 
     translator = FakeTranslator()
-    translator.translate = lambda texts: tracking_translate(translator, texts)
+    translator.translate_cues = lambda cues: tracking_translate_cues(translator, cues)
 
-    result, splits = _translate_chunked(translator, texts, chunk_size=2, checkpoint_path=checkpoint_path)
+    result, splits = _translate_chunked(
+        translator,
+        _cues_from_texts(texts),
+        chunk_size=2,
+        checkpoint_path=checkpoint_path,
+    )
 
     # Should only translate chunk 2 (lines e, f)
     assert translated_inputs == ["e", "f"]
@@ -234,33 +338,19 @@ def test_checkpoint_saved_after_each_chunk(tmp_path):
             path, completed, fp
         )
         _translate_chunked(
-            translator, texts, chunk_size=2, checkpoint_path=checkpoint_path
+            translator,
+            _cues_from_texts(texts),
+            chunk_size=2,
+            checkpoint_path=checkpoint_path,
         )
         # Should be called once per chunk
         assert mock_save.call_count == 2
 
 
 def test_translate_subtitles_sets_llm_trace_path(tmp_path, monkeypatch):
-    input_ass_path = tmp_path / "original.ass"
-    output_ass_path = tmp_path / "translated.ass"
-    input_ass_path.write_text(
-        "\n".join(
-            [
-                "[Script Info]",
-                "Title: Test",
-                "ScriptType: v4.00+",
-                "",
-                "[V4+ Styles]",
-                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-                "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1",
-                "",
-                "[Events]",
-                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-                "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,こんにちは",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    _write_formatted_document(input_json_path)
 
     captured: dict[str, object] = {}
 
@@ -271,37 +361,121 @@ def test_translate_subtitles_sets_llm_trace_path(tmp_path, monkeypatch):
         def translate(self, texts: list[str]) -> list[str]:
             return [f"translated:{text}" for text in texts]
 
+        translate_cues = _fake_translate_cues
+
     monkeypatch.setattr(translate_main_module, "PROJECT_ID", "test-project")
     monkeypatch.setattr(translator_module, "VertexTranslator", FakeVertexTranslator)
 
-    translate_subtitles(input_ass_path, output_ass_path, engine="vertex")
+    translate_subtitles(input_json_path, output_json_path, engine="vertex")
 
-    assert captured["trace_path"] == output_ass_path.with_suffix(".llm_trace.jsonl")
+    assert captured["trace_path"] == output_json_path.with_suffix(".llm_trace.jsonl")
+
+
+def test_translate_subtitles_populates_translated_text_with_translate_cues(
+    tmp_path, monkeypatch
+):
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    _write_formatted_document(input_json_path)
+
+    class FakeVertexTranslator:
+        def __init__(self, **kwargs):
+            pass
+
+        def translate(self, texts: list[str]) -> list[str]:
+            raise AssertionError("translate_cues should be used")
+
+        def translate_cues(self, cues: list[SubtitleCue]) -> list[str]:
+            return [f"translated:{cue.source_text}" for cue in cues]
+
+    monkeypatch.setattr(translate_main_module, "PROJECT_ID", "test-project")
+    monkeypatch.setattr(translator_module, "VertexTranslator", FakeVertexTranslator)
+
+    translate_subtitles(input_json_path, output_json_path, engine="vertex")
+
+    document = SubtitleDocument.model_validate_json(
+        output_json_path.read_text(encoding="utf-8")
+    )
+    assert document.stage == "translated"
+    assert document.cues[0].translated_text == "translated:こんにちは"
+
+
+def test_extract_corner_boundaries_from_cues_skips_empty_source_text():
+    document = SubtitleDocument(
+        stage="formatted",
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="",
+                corner="ignored",
+            ),
+            SubtitleCue(
+                id="cue-00002",
+                start_time=1,
+                end_time=2,
+                source_text="intro",
+            ),
+            SubtitleCue(
+                id="cue-00003",
+                start_time=2,
+                end_time=3,
+                source_text="corner starts",
+                corner="mail",
+            ),
+        ],
+    )
+
+    assert _extract_corner_boundaries_from_cues(document) == [1]
+
+
+def test_extract_corner_boundaries_warns_for_empty_corner_cue(caplog):
+    document = SubtitleDocument(
+        stage="formatted",
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="",
+                corner="ignored",
+            )
+        ],
+    )
+
+    with caplog.at_level("WARNING"):
+        assert _extract_corner_boundaries_from_cues(document) == []
+
+    assert "Ignoring corner boundary on empty cue cue-00001" in caplog.text
+
+
+def test_subtitle_document_json_round_trip():
+    document = SubtitleDocument(
+        stage="formatted",
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="こんにちは",
+                normalized_source_text="こんにちは。",
+                role="listener_mail",
+            )
+        ],
+    )
+
+    reloaded = SubtitleDocument.model_validate_json(document.model_dump_json())
+
+    assert reloaded == document
 
 
 def test_translate_subtitles_allows_anthropic_without_google_project(
     tmp_path, monkeypatch
 ):
-    input_ass_path = tmp_path / "original.ass"
-    output_ass_path = tmp_path / "translated.ass"
-    input_ass_path.write_text(
-        "\n".join(
-            [
-                "[Script Info]",
-                "Title: Test",
-                "ScriptType: v4.00+",
-                "",
-                "[V4+ Styles]",
-                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-                "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1",
-                "",
-                "[Events]",
-                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-                "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,こんにちは",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    _write_formatted_document(input_json_path)
 
     captured: dict[str, object] = {}
 
@@ -312,12 +486,14 @@ def test_translate_subtitles_allows_anthropic_without_google_project(
         def translate(self, texts: list[str]) -> list[str]:
             return [f"translated:{text}" for text in texts]
 
+        translate_cues = _fake_translate_cues
+
     monkeypatch.setattr(translate_main_module, "PROJECT_ID", None)
     monkeypatch.setattr(translator_module, "VertexTranslator", FakeVertexTranslator)
 
     translate_subtitles(
-        input_ass_path,
-        output_ass_path,
+        input_json_path,
+        output_json_path,
         engine="vertex",
         provider="anthropic",
     )
@@ -330,26 +506,9 @@ def test_translate_subtitles_allows_anthropic_without_google_project(
 def test_translate_subtitles_allows_anthropic_vertex_with_google_project(
     tmp_path, monkeypatch
 ):
-    input_ass_path = tmp_path / "original.ass"
-    output_ass_path = tmp_path / "translated.ass"
-    input_ass_path.write_text(
-        "\n".join(
-            [
-                "[Script Info]",
-                "Title: Test",
-                "ScriptType: v4.00+",
-                "",
-                "[V4+ Styles]",
-                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-                "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1",
-                "",
-                "[Events]",
-                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-                "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,こんにちは",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    _write_formatted_document(input_json_path)
 
     captured: dict[str, object] = {}
 
@@ -360,12 +519,14 @@ def test_translate_subtitles_allows_anthropic_vertex_with_google_project(
         def translate(self, texts: list[str]) -> list[str]:
             return [f"translated:{text}" for text in texts]
 
+        translate_cues = _fake_translate_cues
+
     monkeypatch.setattr(translate_main_module, "PROJECT_ID", "test-project")
     monkeypatch.setattr(translator_module, "VertexTranslator", FakeVertexTranslator)
 
     translate_subtitles(
-        input_ass_path,
-        output_ass_path,
+        input_json_path,
+        output_json_path,
         engine="vertex",
         provider="anthropic-vertex",
     )
@@ -378,26 +539,9 @@ def test_translate_subtitles_allows_anthropic_vertex_with_google_project(
 def test_translate_subtitles_allows_openai_without_google_project(
     tmp_path, monkeypatch
 ):
-    input_ass_path = tmp_path / "original.ass"
-    output_ass_path = tmp_path / "translated.ass"
-    input_ass_path.write_text(
-        "\n".join(
-            [
-                "[Script Info]",
-                "Title: Test",
-                "ScriptType: v4.00+",
-                "",
-                "[V4+ Styles]",
-                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-                "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1",
-                "",
-                "[Events]",
-                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-                "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,こんにちは",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    _write_formatted_document(input_json_path)
 
     captured: dict[str, object] = {}
 
@@ -408,12 +552,14 @@ def test_translate_subtitles_allows_openai_without_google_project(
         def translate(self, texts: list[str]) -> list[str]:
             return [f"translated:{text}" for text in texts]
 
+        translate_cues = _fake_translate_cues
+
     monkeypatch.setattr(translate_main_module, "PROJECT_ID", None)
     monkeypatch.setattr(translator_module, "VertexTranslator", FakeVertexTranslator)
 
     translate_subtitles(
-        input_ass_path,
-        output_ass_path,
+        input_json_path,
+        output_json_path,
         engine="vertex",
         provider="openai",
     )
@@ -426,26 +572,9 @@ def test_translate_subtitles_allows_openai_without_google_project(
 def test_translate_subtitles_allows_openrouter_without_google_project(
     tmp_path, monkeypatch
 ):
-    input_ass_path = tmp_path / "original.ass"
-    output_ass_path = tmp_path / "translated.ass"
-    input_ass_path.write_text(
-        "\n".join(
-            [
-                "[Script Info]",
-                "Title: Test",
-                "ScriptType: v4.00+",
-                "",
-                "[V4+ Styles]",
-                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-                "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1",
-                "",
-                "[Events]",
-                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-                "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,こんにちは",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    _write_formatted_document(input_json_path)
 
     captured: dict[str, object] = {}
 
@@ -456,12 +585,14 @@ def test_translate_subtitles_allows_openrouter_without_google_project(
         def translate(self, texts: list[str]) -> list[str]:
             return [f"translated:{text}" for text in texts]
 
+        translate_cues = _fake_translate_cues
+
     monkeypatch.setattr(translate_main_module, "PROJECT_ID", None)
     monkeypatch.setattr(translator_module, "VertexTranslator", FakeVertexTranslator)
 
     translate_subtitles(
-        input_ass_path,
-        output_ass_path,
+        input_json_path,
+        output_json_path,
         engine="vertex",
         provider="openrouter",
     )
@@ -474,59 +605,25 @@ def test_translate_subtitles_allows_openrouter_without_google_project(
 def test_translate_subtitles_requires_google_project_for_anthropic_vertex(
     tmp_path, monkeypatch
 ):
-    input_ass_path = tmp_path / "original.ass"
-    output_ass_path = tmp_path / "translated.ass"
-    input_ass_path.write_text(
-        "\n".join(
-            [
-                "[Script Info]",
-                "Title: Test",
-                "ScriptType: v4.00+",
-                "",
-                "[V4+ Styles]",
-                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-                "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1",
-                "",
-                "[Events]",
-                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-                "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,こんにちは",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    _write_formatted_document(input_json_path)
 
     monkeypatch.setattr(translate_main_module, "PROJECT_ID", None)
 
     with pytest.raises(ValueError, match="GOOGLE_CLOUD_PROJECT is not set"):
         translate_subtitles(
-            input_ass_path,
-            output_ass_path,
+            input_json_path,
+            output_json_path,
             engine="vertex",
             provider="anthropic-vertex",
         )
 
 
 def test_translate_subtitles_writes_error_file_on_failure(tmp_path, monkeypatch):
-    input_ass_path = tmp_path / "original.ass"
-    output_ass_path = tmp_path / "translated.ass"
-    input_ass_path.write_text(
-        "\n".join(
-            [
-                "[Script Info]",
-                "Title: Test",
-                "ScriptType: v4.00+",
-                "",
-                "[V4+ Styles]",
-                "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-                "Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,0,2,10,10,10,1",
-                "",
-                "[Events]",
-                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-                "Dialogue: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,こんにちは",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    _write_formatted_document(input_json_path)
 
     class FailingVertexTranslator:
         def __init__(self, **kwargs):
@@ -535,13 +632,15 @@ def test_translate_subtitles_writes_error_file_on_failure(tmp_path, monkeypatch)
         def translate(self, texts: list[str]) -> list[str]:
             raise RuntimeError("translation exploded")
 
+        translate_cues = _fake_translate_cues
+
     monkeypatch.setattr(translate_main_module, "PROJECT_ID", "test-project")
     monkeypatch.setattr(translator_module, "VertexTranslator", FailingVertexTranslator)
 
     with pytest.raises(RuntimeError, match="translation exploded"):
-        translate_subtitles(input_ass_path, output_ass_path, engine="vertex")
+        translate_subtitles(input_json_path, output_json_path, engine="vertex")
 
-    error_path = output_ass_path.with_suffix(".error.txt")
+    error_path = output_json_path.with_suffix(".error.txt")
     report = error_path.read_text(encoding="utf-8")
     assert "Traceback" in report
     assert "RuntimeError: translation exploded" in report
@@ -551,7 +650,9 @@ def test_chunked_all_checkpointed_skips_translation(tmp_path):
     """If all chunks are in the checkpoint, no translation calls should be made."""
     checkpoint_path = tmp_path / "test.checkpoint.json"
     texts = ["a", "b", "c", "d"]
-    fp = _compute_fingerprint(texts, chunk_size=2, corner_boundaries=None)
+    fp = _compute_cue_fingerprint(
+        _cues_from_texts(texts), chunk_size=2, corner_boundaries=None
+    )
 
     existing = {
         0: ["translated:a", "translated:b"],
@@ -560,10 +661,17 @@ def test_chunked_all_checkpointed_skips_translation(tmp_path):
     _save_checkpoint(checkpoint_path, existing, fp)
 
     translator = MagicMock()
+    translator.translate_cues = MagicMock()
 
-    result, splits = _translate_chunked(translator, texts, chunk_size=2, checkpoint_path=checkpoint_path)
+    result, splits = _translate_chunked(
+        translator,
+        _cues_from_texts(texts),
+        chunk_size=2,
+        checkpoint_path=checkpoint_path,
+    )
 
     translator.translate.assert_not_called()
+    translator.translate_cues.assert_not_called()
     assert result == ["translated:a", "translated:b", "translated:c", "translated:d"]
 
 
@@ -588,14 +696,38 @@ def test_load_checkpoint_legacy_format_discarded(tmp_path):
     assert result == {}
 
 
-def test_fingerprint_changes_with_texts():
-    fp1 = _compute_fingerprint(["a", "b", "c"], chunk_size=2, corner_boundaries=None)
-    fp2 = _compute_fingerprint(["b", "c"], chunk_size=2, corner_boundaries=None)
+def test_cue_fingerprint_changes_with_texts():
+    fp1 = _compute_cue_fingerprint(
+        _cues_from_texts(["a", "b", "c"]), chunk_size=2, corner_boundaries=None
+    )
+    fp2 = _compute_cue_fingerprint(
+        _cues_from_texts(["b", "c"]), chunk_size=2, corner_boundaries=None
+    )
     assert fp1 != fp2
 
 
-def test_fingerprint_changes_with_chunk_size():
+def test_cue_fingerprint_changes_with_chunk_size():
     texts = ["a", "b", "c", "d"]
-    fp1 = _compute_fingerprint(texts, chunk_size=2, corner_boundaries=None)
-    fp2 = _compute_fingerprint(texts, chunk_size=3, corner_boundaries=None)
+    fp1 = _compute_cue_fingerprint(
+        _cues_from_texts(texts), chunk_size=2, corner_boundaries=None
+    )
+    fp2 = _compute_cue_fingerprint(
+        _cues_from_texts(texts), chunk_size=3, corner_boundaries=None
+    )
+    assert fp1 != fp2
+
+
+def test_cue_fingerprint_changes_with_translation_metadata():
+    base = SubtitleCue(
+        id="cue-00001",
+        start_time=0,
+        end_time=1,
+        source_text="same text",
+        role="host",
+    )
+    changed_role = base.model_copy(update={"role": "listener_mail"})
+
+    fp1 = _compute_cue_fingerprint([base], chunk_size=2, corner_boundaries=None)
+    fp2 = _compute_cue_fingerprint([changed_role], chunk_size=2, corner_boundaries=None)
+
     assert fp1 != fp2

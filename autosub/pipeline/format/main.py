@@ -3,7 +3,14 @@ import logging
 from pathlib import Path
 from typing import Sequence
 
-from autosub.core.schemas import SubtitleLine, TranscriptionResult
+from autosub.core.schemas import (
+    SubtitleCue,
+    SubtitleDocument,
+    SubtitleLine,
+    SubtitleMetadata,
+    TranscriptionMetadata,
+    TranscriptionResult,
+)
 from autosub.pipeline.format import chunker
 from autosub.pipeline.format import generator
 from autosub.pipeline.format.normalizer import (
@@ -173,9 +180,9 @@ def _load_transcript(input_json_path: Path) -> TranscriptionResult:
     return TranscriptionResult(**data)
 
 
-def _initial_lines_from_inputs(
+def _initial_lines_and_metadata_from_inputs(
     input_json_paths: Path | Sequence[Path],
-) -> list[SubtitleLine]:
+) -> tuple[list[SubtitleLine], list[TranscriptionMetadata], list[Path]]:
     if isinstance(input_json_paths, Path):
         normalized_paths = [input_json_paths]
     else:
@@ -185,6 +192,7 @@ def _initial_lines_from_inputs(
         raise ValueError("At least one transcript JSON path is required.")
 
     merged_lines: list[SubtitleLine] = []
+    metadata: list[TranscriptionMetadata] = []
     input_ranges: list[tuple[Path, float, float]] = []
     seen_resolved_paths: dict[Path, Path] = {}
     for input_json_path in normalized_paths:
@@ -200,6 +208,8 @@ def _initial_lines_from_inputs(
             seen_resolved_paths[resolved_path] = input_json_path
 
         transcript = _load_transcript(input_json_path)
+        if transcript.metadata:
+            metadata.append(transcript.metadata)
         transcript_lines = _initial_lines(transcript)
         logger.info(
             "Generated %d initial subtitle lines from %s.",
@@ -223,7 +233,7 @@ def _initial_lines_from_inputs(
 
     _warn_for_overlapping_input_ranges(input_ranges)
     merged_lines.sort(key=lambda line: (line.start_time, line.end_time))
-    return merged_lines
+    return merged_lines, metadata, normalized_paths
 
 
 def _warn_for_overlapping_input_ranges(
@@ -362,13 +372,14 @@ def _normalize_split_text(text: str, *, ensure_terminal_punctuation: bool) -> st
 def format_subtitles(
     input_json_paths: Path | Sequence[Path],
     output_ass_path: Path,
+    output_json_path: Path | None = None,
     keyframes: list[int] | None = None,
     video_duration_ms: int | None = None,
     timing_config: dict | None = None,
     extensions_config: dict | None = None,
     normalizer_config: dict | None = None,
     replacements: dict[str, str] | None = None,
-) -> None:
+) -> SubtitleDocument:
     """
     Reads one or more transcript.json files, chunks the transcribed words into
     semantic lines, merges the initial line sets, applies timing rules (gap
@@ -376,8 +387,15 @@ def format_subtitles(
     Inputs should be disjoint or cleanly offset in time; overlapping ranges will
     be interleaved without dedup.
     """
+    if output_json_path is None:
+        output_json_path = output_ass_path.with_name(
+            f"{output_ass_path.stem}_formatted.json"
+        )
+
     logger.info("Chunking transcript into semantic subtitle lines...")
-    lines = _initial_lines_from_inputs(input_json_paths)
+    lines, transcription_metadata, normalized_paths = (
+        _initial_lines_and_metadata_from_inputs(input_json_paths)
+    )
     logger.info(f"Generated {len(lines)} subtitle lines.")
 
     if replacements and normalizer_config:
@@ -473,8 +491,34 @@ def format_subtitles(
         ),
     )
 
+    document = SubtitleDocument(
+        stage="formatted",
+        metadata=SubtitleMetadata(
+            source_transcripts=[str(path) for path in normalized_paths],
+            transcribe_metadata=transcription_metadata,
+        ),
+        cues=[
+            SubtitleCue(
+                id=f"cue-{index + 1:05d}",
+                start_time=line.start_time,
+                end_time=line.end_time,
+                source_text=line.text,
+                normalized_source_text=line.text,
+                speaker=line.speaker,
+                role=line.role,
+                corner=line.corner,
+                words=list(line.words),
+                replacement_spans=list(line.replacement_spans),
+            )
+            for index, line in enumerate(lines)
+        ],
+    )
+
+    logger.info(f"Writing formatted JSON to {output_json_path}...")
+    output_json_path.write_text(document.model_dump_json(indent=2), encoding="utf-8")
+
     logger.info(f"Writing .ass file to {output_ass_path}...")
-    generator.generate_ass_file(lines, output_ass_path)
+    generator.render_ass_document(document, output_ass_path, mode="source")
     trace_paths = [
         _stage_trace_path(output_ass_path, name)
         for name in ("normalizer", "radio_discourse", "corners", "combined")
@@ -483,3 +527,4 @@ def format_subtitles(
         if trace_path.exists():
             logger.info(f"Wrote LLM trace to {trace_path}.")
     logger.info("Subtitle formatting complete!")
+    return document

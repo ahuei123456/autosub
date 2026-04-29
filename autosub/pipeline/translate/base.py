@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from autosub.core.schemas import SubtitleCue
 
 
 class BaseTranslator(ABC):
@@ -22,3 +25,7 @@ class BaseTranslator(ABC):
         Translates a list of strings and returns the translated list in the exact same order.
         """
         pass
+
+    def translate_cues(self, cues: list["SubtitleCue"]) -> list[str]:
+        texts = [cue.normalized_source_text or cue.source_text for cue in cues]
+        return self.translate(texts)
