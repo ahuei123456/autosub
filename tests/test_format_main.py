@@ -3,6 +3,8 @@ import json
 import pyass
 import autosub.extensions.radio_discourse.main as radio_discourse_main
 
+from autosub.core.schemas import SubtitleCue, SubtitleDocument
+from autosub.pipeline.format.generator import render_ass_document
 from autosub.pipeline.format.main import format_subtitles
 
 
@@ -47,6 +49,28 @@ def test_format_subtitles_does_not_insert_ass_line_breaks(tmp_path):
 
     ass_text = output_path.read_text(encoding="utf-8")
     assert r"\N" not in ass_text
+
+
+def test_render_bilingual_ass_uses_single_backslash_override_tags(tmp_path):
+    output_path = tmp_path / "translated.ass"
+    document = SubtitleDocument(
+        stage="translated",
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="こんにちは",
+                translated_text="Hello.",
+            )
+        ],
+    )
+
+    render_ass_document(document, output_path, mode="bilingual")
+
+    ass_text = output_path.read_text(encoding="utf-8")
+    assert r"{\fs24\a6}こんにちは{\N}{\fs48\a2}Hello." in ass_text
+    assert r"{\\fs24\\a6}" not in ass_text
 
 
 def test_format_subtitles_applies_radio_discourse_extension_and_preserves_role(

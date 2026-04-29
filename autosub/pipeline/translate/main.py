@@ -4,18 +4,19 @@ import logging
 import traceback
 from pathlib import Path
 
-import pyass
 from autosub.core.config import PROJECT_ID
 from autosub.core.llm import ReasoningEffort
+from autosub.core.schemas import SubtitleCue, SubtitleDocument
+from autosub.pipeline.format.generator import render_ass_document
 from autosub.pipeline.translate.chunker import make_chunks
 
 logger = logging.getLogger(__name__)
 
 
-def _compute_fingerprint(
-    texts: list[str], chunk_size: int, corner_boundaries: list[int] | None
+def _compute_cue_fingerprint(
+    cues: list[SubtitleCue], chunk_size: int, corner_boundaries: list[int] | None
 ) -> str:
-    """Hash input texts and chunking config to detect stale checkpoints."""
+    """Hash translation inputs and cue metadata to detect stale checkpoints."""
     h = hashlib.sha256()
     h.update(str(chunk_size).encode())
     h.update(b"\x00")
@@ -23,53 +24,25 @@ def _compute_fingerprint(
         h.update(str(b).encode())
         h.update(b"\x00")
     h.update(b"\x01")
-    for t in texts:
-        h.update(t.encode())
+    for cue in cues:
+        source_text = cue.normalized_source_text or cue.source_text
+        payload = {
+            "text": source_text,
+            "start_time": cue.start_time,
+            "end_time": cue.end_time,
+            "speaker": cue.speaker,
+            "role": cue.role,
+            "corner": cue.corner,
+        }
+        h.update(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode())
         h.update(b"\x00")
     return h.hexdigest()
 
 
-def _extract_corner_boundaries(
-    all_events: list[pyass.Event],
-    events_to_translate: list[pyass.Event],
-) -> list[int]:
-    """Extract corner boundary indices from Comment events in the ASS script.
-
-    Corner Comment events (effect="corner") are placed by the format-time
-    corners extension. This function maps each corner Comment to the index
-    of the next dialogue event in the translate list, giving the chunker
-    pre-computed boundary positions.
-    """
-    translate_set = set(id(e) for e in events_to_translate)
-    boundaries: list[int] = []
-    pending_corner = False
-    dialogue_idx = 0
-
-    for event in all_events:
-        if (
-            isinstance(event, pyass.Event)
-            and event.format == pyass.EventFormat.COMMENT
-            and event.effect == "corner"
-        ):
-            # A corner annotation attaches to the *next* translatable dialogue
-            # event, not necessarily the immediately following event. This
-            # handles intervening non-translatable Comments (e.g. chunk markers)
-            # that may appear between the corner Comment and its target dialogue.
-            pending_corner = True
-            continue
-
-        if id(event) in translate_set:
-            if pending_corner:
-                boundaries.append(dialogue_idx)
-                pending_corner = False
-            dialogue_idx += 1
-
-    return boundaries
-
-
 def translate_subtitles(
-    input_ass_path: Path,
-    output_ass_path: Path,
+    input_json_path: Path,
+    output_json_path: Path,
+    output_ass_path: Path | None = None,
     engine: str = "vertex",
     system_prompt: str | None = None,
     target_lang: str = "en",
@@ -87,37 +60,39 @@ def translate_subtitles(
     log_dir: Path | None = None,
 ) -> None:
     """
-    Reads an original .ass file, translates the dialogue events, and outputs a new .ass file.
+    Reads a formatted subtitle JSON document, translates cue source text, and
+    writes a translated JSON document plus a rendered ASS byproduct.
 
-    Corner boundaries are automatically extracted from Comment events with
-    effect="corner" in the input ASS (placed by the corners format extension).
+    Corner boundaries are read directly from structured cue metadata.
     """
-    logger.info(f"Loading '{input_ass_path}' for translation...")
+    if output_ass_path is None:
+        output_ass_path = output_json_path.with_suffix(".ass")
 
-    with open(input_ass_path, "r", encoding="utf-8") as f:
-        script = pyass.load(f)
+    logger.info(f"Loading '{input_json_path}' for translation...")
+    document = SubtitleDocument.model_validate_json(
+        input_json_path.read_text(encoding="utf-8")
+    )
 
-    # Extract only the dialogue text
-    # We maintain a reference list to easily write the translations back to the correct events
-    events_to_translate = []
+    cues_to_translate = []
     texts_to_translate = []
-
-    for event in script.events:
-        # Skip Comment events so they aren't sent to the LLM
-        if isinstance(event, pyass.Event) and event.format == pyass.EventFormat.COMMENT:
-            continue
-        if isinstance(event, pyass.Event) and event.text:
-            # We don't want to translate raw .ass tags.
-            # In a robust implementation, we'd strip {\\tags} before translating.
-            # Pyass has an event.text property which returns the raw text. Let's grab the raw string representation of parts.
-            raw_text = event.text
-
-            if raw_text.strip():
-                events_to_translate.append(event)
-                texts_to_translate.append(raw_text)
+    for cue in document.cues:
+        source_text = cue.normalized_source_text or cue.source_text
+        if source_text.strip():
+            cues_to_translate.append(cue)
+            texts_to_translate.append(source_text)
 
     if not texts_to_translate:
         logger.warning("No subtitle text found to translate. Exiting.")
+        translated_document = document.model_copy(deep=True)
+        translated_document.stage = "translated"
+        output_json_path.write_text(
+            translated_document.model_dump_json(indent=2), encoding="utf-8"
+        )
+        render_ass_document(
+            translated_document,
+            output_ass_path,
+            mode="bilingual" if bilingual else "translated",
+        )
         return
 
     llm_trace_path: Path | None = None
@@ -161,15 +136,14 @@ def translate_subtitles(
     else:
         raise ValueError(f"Unknown translation engine: {engine}")
 
-    checkpoint_path = output_ass_path.with_suffix(".checkpoint.json")
-    error_path = output_ass_path.with_suffix(".error.txt")
+    checkpoint_path = output_json_path.with_suffix(".checkpoint.json")
+    error_path = output_json_path.with_suffix(".error.txt")
 
     if error_path.exists():
         error_path.unlink()
         logger.info("Removed previous translation error file.")
 
-    # Extract corner boundaries from Comment events placed by format-time extension
-    corner_boundaries = _extract_corner_boundaries(script.events, events_to_translate)
+    corner_boundaries = _extract_corner_boundaries_from_cues(document)
     if corner_boundaries:
         logger.info(
             f"Found {len(corner_boundaries)} corner boundaries at dialogue indices {corner_boundaries}"
@@ -180,7 +154,7 @@ def translate_subtitles(
         if chunk_size > 0:
             translated_texts, splits = _translate_chunked(
                 translator,
-                texts_to_translate,
+                cues_to_translate,
                 chunk_size,
                 checkpoint_path,
                 corner_boundaries=corner_boundaries or None,
@@ -188,7 +162,7 @@ def translate_subtitles(
                 log_dir=log_dir,
             )
         else:
-            translated_texts = translator.translate(texts_to_translate)
+            translated_texts = translator.translate_cues(cues_to_translate)
     except Exception as exc:
         _write_error_report(error_path, exc)
         logger.error(f"Wrote translation error details to {error_path}.")
@@ -199,61 +173,55 @@ def translate_subtitles(
         checkpoint_path.unlink()
         logger.info("Removed checkpoint file.")
 
-    if len(translated_texts) != len(events_to_translate):
+    if len(translated_texts) != len(cues_to_translate):
         raise ValueError(
-            f"Translation API expected {len(events_to_translate)} translations, but got {len(translated_texts)}"
+            f"Translation API expected {len(cues_to_translate)} translations, but got {len(translated_texts)}"
         )
 
-    logger.info("Applying translations to subtitle events...")
+    logger.info("Applying translations to subtitle document...")
+    translated_document = document.model_copy(deep=True)
+    translated_document.stage = "translated"
+    cue_by_id = {cue.id: cue for cue in translated_document.cues}
+    for source_cue, translated_text in zip(
+        cues_to_translate, translated_texts, strict=True
+    ):
+        cue_by_id[source_cue.id].translated_text = translated_text
 
-    new_events: list[pyass.Event] = []
-    translated_event_set = set(id(e) for e in events_to_translate)
-
-    # Walk all events in order, preserving non-translated events (e.g. corner Comments)
-    # in place while applying translations.
-    event_idx = 0
-    for event in script.events:
-        if id(event) not in translated_event_set:
-            # Non-dialogue event (Comment, etc.) — keep as-is
-            new_events.append(event)
-            continue
-
-        # Match this event to its translation by index
-        original_text = texts_to_translate[event_idx]
-        translated_text = translated_texts[event_idx]
-
-        # Insert debug comment at artificial chunk boundaries
-        if debug and event_idx in splits:
-            debug_comment = pyass.Event(
-                format=pyass.EventFormat.COMMENT,
-                start=event.start,
-                end=event.end,
-                style=event.style,
-                effect="",
-                text="[autosub] Chunk boundary — review translation around this line",
-            )
-            new_events.append(debug_comment)
-
-        event_idx += 1
-
-        # Update the event with the new text
-        if bilingual:
-            event.text = f"{{\\\\fs24\\\\a6}}{original_text}{{\\\\N}}{{\\\\fs48\\\\a2}}{translated_text}"
-        else:
-            event.text = translated_text
-
-        new_events.append(event)
-
-    script.events = new_events
+    logger.info(f"Writing translated JSON to {output_json_path}...")
+    output_json_path.write_text(
+        translated_document.model_dump_json(indent=2), encoding="utf-8"
+    )
 
     logger.info(f"Writing translated .ass file to {output_ass_path}...")
-    with open(output_ass_path, "w", encoding="utf-8") as f:
-        pyass.dump(script, f)
+    render_ass_document(
+        translated_document,
+        output_ass_path,
+        mode="bilingual" if bilingual else "translated",
+        chunk_boundaries=splits if debug else None,
+    )
 
     if llm_trace_path is not None and llm_trace_path.exists():
         logger.info(f"Wrote LLM trace to {llm_trace_path}.")
 
     logger.info("Translation complete!")
+
+
+def _extract_corner_boundaries_from_cues(document: SubtitleDocument) -> list[int]:
+    boundaries: list[int] = []
+    dialogue_idx = 0
+    for cue in document.cues:
+        source_text = cue.normalized_source_text or cue.source_text
+        if not source_text.strip():
+            if cue.corner:
+                logger.warning(
+                    "Ignoring corner boundary on empty cue %s.",
+                    cue.id,
+                )
+            continue
+        if cue.corner:
+            boundaries.append(dialogue_idx)
+        dialogue_idx += 1
+    return boundaries
 
 
 def _write_error_report(error_path: Path, exc: Exception) -> None:
@@ -340,7 +308,7 @@ def _save_checkpoint(
 
 def _translate_chunked(
     translator,
-    texts: list[str],
+    cues: list[SubtitleCue],
     chunk_size: int,
     checkpoint_path: Path,
     corner_boundaries: list[int] | None = None,
@@ -348,8 +316,9 @@ def _translate_chunked(
     log_dir: Path | None = None,
 ) -> tuple[list[str], set[int]]:
     """Split texts into chunks, translate each once, and merge results."""
+    texts = [cue.normalized_source_text or cue.source_text for cue in cues]
     chunks, splits = make_chunks(texts, chunk_size, corner_boundaries=corner_boundaries)
-    fingerprint = _compute_fingerprint(texts, chunk_size, corner_boundaries)
+    fingerprint = _compute_cue_fingerprint(cues, chunk_size, corner_boundaries)
 
     # Set up structured log directory
     chunks_dir = None
@@ -391,6 +360,10 @@ def _translate_chunked(
 
     line_offset = 0
     for chunk_idx, chunk in enumerate(chunks):
+        cue_chunk = cues[line_offset : line_offset + len(chunk)]
+        if len(cue_chunk) != len(chunk):
+            raise ValueError("Cue chunking lost alignment with text chunks.")
+
         line_start = line_offset + 1
         line_end = line_offset + len(chunk)
 
@@ -407,7 +380,7 @@ def _translate_chunked(
         )
         logger.info(f"    first: {first}")
         logger.info(f"    last:  {last}")
-        results = translator.translate(chunk)
+        results = translator.translate_cues(cue_chunk)
         completed[chunk_idx] = results
         _save_checkpoint(checkpoint_path, completed, fingerprint)
 
