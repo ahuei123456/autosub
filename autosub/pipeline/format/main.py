@@ -368,6 +368,7 @@ def format_subtitles(
     extensions_config: dict | None = None,
     normalizer_config: dict | None = None,
     replacements: dict[str, str] | None = None,
+    speaker_map: dict[str, dict] | None = None,
 ) -> None:
     """
     Reads one or more transcript.json files, chunks the transcribed words into
@@ -471,10 +472,19 @@ def format_subtitles(
         conditional_snap_threshold_ms=timing_config.get(
             "conditional_snap_threshold_ms", 500
         ),
+        interjection_max_duration_ms=timing_config.get(
+            "interjection_max_duration_ms", 1000
+        ),
+        interjection_merge_threshold_ms=timing_config.get(
+            "interjection_merge_threshold_ms", 1500
+        ),
+        interjection_gap_threshold_ms=timing_config.get(
+            "interjection_gap_threshold_ms", 2000
+        ),
     )
 
     logger.info(f"Writing .ass file to {output_ass_path}...")
-    generator.generate_ass_file(lines, output_ass_path)
+    generator.generate_ass_file(lines, output_ass_path, speaker_map=speaker_map)
     trace_paths = [
         _stage_trace_path(output_ass_path, name)
         for name in ("normalizer", "radio_discourse", "corners", "combined")

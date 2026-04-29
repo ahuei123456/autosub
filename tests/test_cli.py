@@ -40,7 +40,7 @@ def test_transcribe_help_includes_backend_options():
     result = runner.invoke(app, ["transcribe", "--help"])
 
     assert result.exit_code == 0
-    assert "--speakers" not in result.output
+    assert "--speakers" in result.output
     assert "--backend" in result.output
     assert "--whisper-model" in result.output
 

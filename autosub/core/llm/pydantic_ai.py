@@ -18,6 +18,7 @@ from pydantic_ai.models.openrouter import OpenRouterModel, OpenRouterModelSettin
 from pydantic_ai.providers.anthropic import AnthropicProvider
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.providers.openai import OpenAIProvider
+import httpx
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.run import AgentRunResult
 from pydantic_ai.settings import ModelSettings
@@ -151,6 +152,7 @@ class BaseStructuredLLM:
         reasoning_dynamic: bool | None = None,
         provider_options: dict[str, Any] | None = None,
         trace_path: Path | str | None = None,
+        request_timeout: float = 300.0,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -164,6 +166,7 @@ class BaseStructuredLLM:
         self.reasoning_dynamic = reasoning_dynamic
         self.provider_options = provider_options.copy() if provider_options else None
         self.trace_path = Path(trace_path) if trace_path is not None else None
+        self.request_timeout = request_timeout
 
     def _get_model_config(self) -> LLMModelConfig:
         return LLMModelConfig(
@@ -194,6 +197,7 @@ class BaseStructuredLLM:
                 provider=GoogleProvider(
                     project=config.project_id,
                     location=config.location,
+                    http_client=httpx.AsyncClient(timeout=self.request_timeout),
                 ),
                 settings=self._build_google_model_settings(config),
             )
