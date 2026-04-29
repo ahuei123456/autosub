@@ -135,11 +135,12 @@ def _merge_detections(
 
 
 def dedup_consecutive(corners: list[str | None]) -> list[str | None]:
-    """Remove consecutive duplicate corner names, keeping only the first.
+    """Remove duplicate corner names, keeping only the first occurrence
+    until a different corner appears.
 
-    Only suppresses truly consecutive repeats. A None gap between two
-    occurrences of the same corner resets tracking, so the second occurrence
-    is preserved (e.g. a show that returns to "Fan Letter" after a "Song").
+    Suppresses repeated detections of the same corner separated by None gaps
+    (dialogue lines). A different corner name resets tracking, so a show
+    that returns to "Fan Letter" after "Song" preserves both occurrences.
     """
     result: list[str | None] = []
     last_corner: str | None = None
@@ -148,5 +149,6 @@ def dedup_consecutive(corners: list[str | None]) -> list[str | None]:
             result.append(None)
         else:
             result.append(corner)
-            last_corner = corner
+            if corner is not None:
+                last_corner = corner
     return result
