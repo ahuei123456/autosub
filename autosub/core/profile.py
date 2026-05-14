@@ -207,6 +207,12 @@ def _load_prompt_fragments(
     for raw_part in raw_parts:
         prompt_value = raw_part.strip()
         if prompt_value.endswith(".md") or prompt_value.endswith(".txt"):
+            logger.warning(
+                f"DEPRECATED: profile {profile_name} references prompt file "
+                f"{prompt_value!r}. Inline the prompt content directly into the "
+                f"profile TOML instead (prompt = \"\"\"...\"\"\"). File references "
+                f"will be removed in a future release."
+            )
             prompt_file_path = _resolve_prompt_path(prompt_value)
             if prompt_file_path is None:
                 raise FileNotFoundError(
