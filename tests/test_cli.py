@@ -681,3 +681,21 @@ def test_run_supports_whisperx_backend_options(tmp_path, monkeypatch):
     assert captured_transcribe["whisper_batch_size"] == 8
     assert captured_transcribe["whisper_diarize"] is True
     assert captured_transcribe["whisper_hf_token"] == "hf-token"
+
+
+def test_run_exits_when_profile_missing(tmp_path, monkeypatch, caplog):
+    video_path = tmp_path / "video.mp4"
+    video_path.write_text("fake", encoding="utf-8")
+
+    def _raise_missing(profile):
+        raise FileNotFoundError(f"Profile {profile}.toml not found in profiles/local.")
+
+    monkeypatch.setattr(cli_module, "load_unified_profile", _raise_missing)
+
+    with caplog.at_level(logging.ERROR, logger="autosub.cli"):
+        result = runner.invoke(
+            app, ["run", str(video_path), "--profile", "proseka/mmj"]
+        )
+
+    assert result.exit_code == 1
+    assert "proseka/mmj.toml not found" in caplog.text
