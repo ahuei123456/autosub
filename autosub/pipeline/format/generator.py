@@ -32,7 +32,7 @@ def render_ass_document(
     output_path: Path,
     *,
     mode: AssRenderMode,
-    chunk_boundaries: set[int] | None = None,
+    chunk_boundaries: list[int] | set[int] | None = None,
 ) -> None:
     """Render a structured subtitle document into an ASS byproduct."""
     entries = [
@@ -48,8 +48,11 @@ def render_ass_document(
     ]
 
     script = _script_from_entries(entries)
-    if chunk_boundaries:
-        script.events = _insert_chunk_boundary_comments(script.events, chunk_boundaries)
+    boundaries = (
+        document.chunk_boundaries if chunk_boundaries is None else chunk_boundaries
+    )
+    if boundaries:
+        script.events = _insert_chunk_boundary_comments(script.events, set(boundaries))
     _write_script(script, output_path)
 
 

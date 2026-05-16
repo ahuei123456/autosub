@@ -1,3 +1,5 @@
+import pytest
+
 from autosub.core.schemas import SubtitleCue, SubtitleDocument, TranscribedWord
 from autosub.pipeline.postprocess.main import _ensure_quoted, postprocess_subtitles
 
@@ -110,6 +112,71 @@ def test_postprocess_preserves_source_words(tmp_path):
     assert document.stage == "postprocessed"
     assert document.cues[0].final_text == '"This is a listener message."'
     assert [word.word for word in document.cues[0].words] == ["メール", "です。"]
+
+
+def test_postprocess_requires_translated_document(tmp_path):
+    input_path = tmp_path / "formatted.json"
+    output_path = tmp_path / "postprocessed.json"
+    document = SubtitleDocument(
+        stage="formatted",
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="source",
+            )
+        ],
+    )
+    input_path.write_text(document.model_dump_json(indent=2), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError, match="postprocess expects stage='translated', got 'formatted'"
+    ):
+        postprocess_subtitles(input_path, output_json_path=output_path)
+
+
+def test_postprocess_preserves_and_renders_chunk_boundaries(tmp_path):
+    input_path = tmp_path / "translated.json"
+    output_json_path = tmp_path / "postprocessed.json"
+    output_ass_path = tmp_path / "postprocessed.ass"
+    document = SubtitleDocument(
+        stage="translated",
+        chunk_boundaries=[1],
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="first",
+                translated_text="First.",
+            ),
+            SubtitleCue(
+                id="cue-00002",
+                start_time=1,
+                end_time=2,
+                source_text="second",
+                translated_text="Second.",
+            ),
+        ],
+    )
+    input_path.write_text(document.model_dump_json(indent=2), encoding="utf-8")
+
+    postprocess_subtitles(
+        input_path,
+        output_json_path=output_json_path,
+        output_ass_path=output_ass_path,
+        bilingual=False,
+    )
+
+    processed = SubtitleDocument.model_validate_json(
+        output_json_path.read_text(encoding="utf-8")
+    )
+    assert processed.chunk_boundaries == [1]
+    assert (
+        "[autosub] Chunk boundary - review translation around this line"
+        in output_ass_path.read_text(encoding="utf-8")
+    )
 
 
 def test_postprocess_collapses_double_outer_quotes_in_replace_mode(tmp_path):

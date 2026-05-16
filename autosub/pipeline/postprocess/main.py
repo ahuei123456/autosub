@@ -28,6 +28,10 @@ def postprocess_subtitles(
     document = SubtitleDocument.model_validate_json(
         input_json_path.read_text(encoding="utf-8")
     )
+    if document.stage != "translated":
+        raise ValueError(
+            f"postprocess expects stage='translated', got {document.stage!r}"
+        )
     processed = document.model_copy(deep=True)
     processed.stage = "postprocessed"
     for cue in processed.cues:

@@ -1,6 +1,6 @@
 from typing import List, Literal, NamedTuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TranscribedWord(BaseModel):
@@ -76,7 +76,10 @@ class SubtitleDocument(BaseModel):
     runs or future cue insertion/resegmentation.
     """
 
+    model_config = ConfigDict(validate_assignment=True)
+
     schema_version: Literal[1] = 1
     stage: Literal["formatted", "translated", "postprocessed"]
     metadata: SubtitleMetadata = Field(default_factory=SubtitleMetadata)
+    chunk_boundaries: List[int] = Field(default_factory=list)
     cues: List[SubtitleCue] = Field(default_factory=list)

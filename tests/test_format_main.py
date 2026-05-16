@@ -71,6 +71,7 @@ def test_format_subtitles_preserves_words_in_formatted_json(tmp_path):
         output_json_path.read_text(encoding="utf-8")
     )
     assert document.stage == "formatted"
+    assert document.cues[0].id == "cue-00000001"
     assert [word.word for word in document.cues[0].words] == ["おすすめ", "です。"]
 
 
@@ -94,6 +95,35 @@ def test_render_bilingual_ass_uses_single_backslash_override_tags(tmp_path):
     ass_text = output_path.read_text(encoding="utf-8")
     assert r"{\fs24\a6}こんにちは{\N}{\fs48\a2}Hello." in ass_text
     assert r"{\\fs24\\a6}" not in ass_text
+
+
+def test_render_ass_document_uses_document_chunk_boundaries(tmp_path):
+    output_path = tmp_path / "translated.ass"
+    document = SubtitleDocument(
+        stage="translated",
+        chunk_boundaries=[1],
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="a",
+                translated_text="A",
+            ),
+            SubtitleCue(
+                id="cue-00002",
+                start_time=1,
+                end_time=2,
+                source_text="b",
+                translated_text="B",
+            ),
+        ],
+    )
+
+    render_ass_document(document, output_path, mode="translated")
+
+    ass_text = output_path.read_text(encoding="utf-8")
+    assert "[autosub] Chunk boundary - review translation around this line" in ass_text
 
 
 def test_format_subtitles_applies_radio_discourse_extension_and_preserves_role(

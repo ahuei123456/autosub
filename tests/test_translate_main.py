@@ -1,8 +1,10 @@
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 import autosub.pipeline.translate.main as translate_main_module
 import autosub.pipeline.translate.translator as translator_module
+from pydantic import ValidationError
 
 from autosub.core.schemas import SubtitleCue, SubtitleDocument, TranscribedWord
 from autosub.pipeline.translate.main import (
@@ -400,6 +402,82 @@ def test_translate_subtitles_populates_translated_text_with_translate_cues(
     assert document.cues[0].translated_text == "translated:こんにちは"
 
 
+def test_translate_subtitles_requires_formatted_document(tmp_path):
+    input_json_path = tmp_path / "translated.json"
+    output_json_path = tmp_path / "translated_again.json"
+    document = SubtitleDocument(
+        stage="translated",
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="source",
+                translated_text="old",
+            )
+        ],
+    )
+    input_json_path.write_text(document.model_dump_json(indent=2), encoding="utf-8")
+
+    with pytest.raises(
+        ValueError, match="translate expects stage='formatted', got 'translated'"
+    ):
+        translate_subtitles(input_json_path, output_json_path, engine="vertex")
+
+
+def test_translate_subtitles_persists_debug_chunk_boundaries(tmp_path, monkeypatch):
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    output_ass_path = tmp_path / "translated.ass"
+    document = SubtitleDocument(
+        stage="formatted",
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="first",
+            ),
+            SubtitleCue(
+                id="cue-00002",
+                start_time=1,
+                end_time=2,
+                source_text="second",
+            ),
+        ],
+    )
+    input_json_path.write_text(document.model_dump_json(indent=2), encoding="utf-8")
+
+    class FakeVertexTranslator:
+        def __init__(self, **kwargs):
+            pass
+
+        def translate_cues(self, cues: list[SubtitleCue]) -> list[str]:
+            return [f"translated:{cue.source_text}" for cue in cues]
+
+    monkeypatch.setattr(translate_main_module, "PROJECT_ID", "test-project")
+    monkeypatch.setattr(translator_module, "VertexTranslator", FakeVertexTranslator)
+
+    translate_subtitles(
+        input_json_path,
+        output_json_path,
+        output_ass_path=output_ass_path,
+        engine="vertex",
+        bilingual=False,
+        chunk_size=1,
+        debug=True,
+    )
+
+    translated = SubtitleDocument.model_validate_json(
+        output_json_path.read_text(encoding="utf-8")
+    )
+    assert translated.chunk_boundaries == [1]
+    assert (
+        "[autosub] Chunk boundary - review translation around this line"
+        in output_ass_path.read_text(encoding="utf-8")
+    )
+
+
 def test_translate_subtitles_preserves_source_words(tmp_path, monkeypatch):
     input_json_path = tmp_path / "formatted.json"
     output_json_path = tmp_path / "translated.json"
@@ -509,6 +587,13 @@ def test_subtitle_document_json_round_trip():
     reloaded = SubtitleDocument.model_validate_json(document.model_dump_json())
 
     assert reloaded == document
+
+
+def test_subtitle_document_validates_stage_assignment():
+    document = SubtitleDocument(stage="formatted")
+
+    with pytest.raises(ValidationError):
+        document.stage = cast(Any, "transalted")
 
 
 def test_translate_subtitles_allows_anthropic_without_google_project(

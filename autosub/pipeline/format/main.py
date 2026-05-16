@@ -497,7 +497,7 @@ def format_subtitles(
         ),
         cues=[
             SubtitleCue(
-                id=f"cue-{index + 1:05d}",
+                id=f"cue-{index + 1:08d}",
                 start_time=line.start_time,
                 end_time=line.end_time,
                 source_text=line.text,

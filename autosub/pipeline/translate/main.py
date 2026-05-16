@@ -72,6 +72,8 @@ def translate_subtitles(
     document = SubtitleDocument.model_validate_json(
         input_json_path.read_text(encoding="utf-8")
     )
+    if document.stage != "formatted":
+        raise ValueError(f"translate expects stage='formatted', got {document.stage!r}")
 
     cues_to_translate = []
     texts_to_translate = []
@@ -85,6 +87,7 @@ def translate_subtitles(
         logger.warning("No subtitle text found to translate. Exiting.")
         translated_document = document.model_copy(deep=True)
         translated_document.stage = "translated"
+        translated_document.chunk_boundaries = []
         output_json_path.write_text(
             translated_document.model_dump_json(indent=2), encoding="utf-8"
         )
@@ -181,6 +184,7 @@ def translate_subtitles(
     logger.info("Applying translations to subtitle document...")
     translated_document = document.model_copy(deep=True)
     translated_document.stage = "translated"
+    translated_document.chunk_boundaries = sorted(splits) if debug else []
     cue_by_id = {cue.id: cue for cue in translated_document.cues}
     for source_cue, translated_text in zip(
         cues_to_translate, translated_texts, strict=True
@@ -197,7 +201,6 @@ def translate_subtitles(
         translated_document,
         output_ass_path,
         mode="bilingual" if bilingual else "translated",
-        chunk_boundaries=splits if debug else None,
     )
 
     if llm_trace_path is not None and llm_trace_path.exists():
