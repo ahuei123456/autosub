@@ -36,7 +36,11 @@ def apply_corners(
         cues = seg.get("cues", [])
         logger.info(
             f"  Segment '{seg['name']}': {len(cues)} cues"
-            + (f" [{', '.join(cues[:3])}{'...' if len(cues) > 3 else ''}]" if cues else "")
+            + (
+                f" [{', '.join(cues[:3])}{'...' if len(cues) > 3 else ''}]"
+                if cues
+                else ""
+            )
         )
 
     # Deterministic cue-based detection
@@ -75,16 +79,7 @@ def apply_corners(
 
     result: list[SubtitleLine] = []
     for line, corner in zip(lines, resolved_corners, strict=False):
-        result.append(
-            SubtitleLine(
-                text=line.text,
-                start_time=line.start_time,
-                end_time=line.end_time,
-                speaker=line.speaker,
-                role=line.role,
-                corner=corner,
-            )
-        )
+        result.append(line.model_copy(update={"corner": corner}))
 
     detected = [c for c in resolved_corners if c is not None]
     if detected:
@@ -93,9 +88,7 @@ def apply_corners(
     return result
 
 
-def detect_by_cues(
-    lines: list[SubtitleLine], segments: list[dict]
-) -> list[str | None]:
+def detect_by_cues(lines: list[SubtitleLine], segments: list[dict]) -> list[str | None]:
     """Scan lines for cue phrases and return corner names at transition points."""
     results: list[str | None] = [None] * len(lines)
 

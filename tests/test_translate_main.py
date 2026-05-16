@@ -4,7 +4,7 @@ import pytest
 import autosub.pipeline.translate.main as translate_main_module
 import autosub.pipeline.translate.translator as translator_module
 
-from autosub.core.schemas import SubtitleCue, SubtitleDocument
+from autosub.core.schemas import SubtitleCue, SubtitleDocument, TranscribedWord
 from autosub.pipeline.translate.main import (
     _compute_cue_fingerprint,
     _extract_corner_boundaries_from_cues,
@@ -398,6 +398,47 @@ def test_translate_subtitles_populates_translated_text_with_translate_cues(
     )
     assert document.stage == "translated"
     assert document.cues[0].translated_text == "translated:こんにちは"
+
+
+def test_translate_subtitles_preserves_source_words(tmp_path, monkeypatch):
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    document = SubtitleDocument(
+        stage="formatted",
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0.0,
+                end_time=1.0,
+                source_text="こんにちは",
+                normalized_source_text="こんにちは",
+                words=[
+                    TranscribedWord(word="こん", start_time=0.0, end_time=0.5),
+                    TranscribedWord(word="にちは", start_time=0.5, end_time=1.0),
+                ],
+            )
+        ],
+    )
+    input_json_path.write_text(document.model_dump_json(indent=2), encoding="utf-8")
+
+    class FakeVertexTranslator:
+        def __init__(self, **kwargs):
+            pass
+
+        def translate_cues(self, cues: list[SubtitleCue]) -> list[str]:
+            return ["hello"]
+
+    monkeypatch.setattr(translate_main_module, "PROJECT_ID", "test-project")
+    monkeypatch.setattr(translator_module, "VertexTranslator", FakeVertexTranslator)
+
+    translate_subtitles(input_json_path, output_json_path, engine="vertex")
+
+    translated = SubtitleDocument.model_validate_json(
+        output_json_path.read_text(encoding="utf-8")
+    )
+    assert translated.stage == "translated"
+    assert translated.cues[0].translated_text == "hello"
+    assert [word.word for word in translated.cues[0].words] == ["こん", "にちは"]
 
 
 def test_extract_corner_boundaries_from_cues_skips_empty_source_text():

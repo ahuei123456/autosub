@@ -1,6 +1,31 @@
 from typing import List, Optional
 
-from autosub.core.schemas import SubtitleLine
+from autosub.core.schemas import ReplacementSpan, SubtitleLine, TranscribedWord
+
+
+def _original_text_length(text: str, spans: list[ReplacementSpan]) -> int:
+    delta = sum(
+        (span.replaced_end - span.replaced_start) - (span.orig_end - span.orig_start)
+        for span in spans
+    )
+    return len(text) - delta
+
+
+def _offset_replacement_spans(
+    spans: list[ReplacementSpan],
+    *,
+    orig_offset: int,
+    replaced_offset: int,
+) -> list[ReplacementSpan]:
+    return [
+        ReplacementSpan(
+            orig_start=span.orig_start + orig_offset,
+            orig_end=span.orig_end + orig_offset,
+            replaced_start=span.replaced_start + replaced_offset,
+            replaced_end=span.replaced_end + replaced_offset,
+        )
+        for span in spans
+    ]
 
 
 class SegmentMS:
@@ -11,6 +36,8 @@ class SegmentMS:
         self.speaker = line.speaker
         self.role = line.role
         self.corner = line.corner
+        self.words: list[TranscribedWord] = list(line.words)
+        self.replacement_spans: list[ReplacementSpan] = list(line.replacement_spans)
         self.start_ms = int(round(line.start_time * 1000))
         self.end_ms = int(round(line.end_time * 1000))
 
@@ -22,6 +49,8 @@ class SegmentMS:
             speaker=self.speaker,
             role=self.role,
             corner=self.corner,
+            words=list(self.words),
+            replacement_spans=list(self.replacement_spans),
         )
 
 
@@ -216,8 +245,21 @@ def _apply_min_duration_padding(
                 next_seg = segments[i + 1]
                 if _roles_compatible_for_merge(seg.role, next_seg.role):
                     # Merge with the next segment when semantic role stays compatible.
-                    seg.text = f"{seg.text} {next_seg.text}".strip()
+                    separator = " " if seg.text and next_seg.text else ""
+                    right_orig_offset = _original_text_length(
+                        seg.text, seg.replacement_spans
+                    ) + len(separator)
+                    right_replaced_offset = len(seg.text) + len(separator)
+                    seg.replacement_spans.extend(
+                        _offset_replacement_spans(
+                            next_seg.replacement_spans,
+                            orig_offset=right_orig_offset,
+                            replaced_offset=right_replaced_offset,
+                        )
+                    )
+                    seg.text = f"{seg.text}{separator}{next_seg.text}".strip()
                     seg.end_ms = next_seg.end_ms
+                    seg.words.extend(next_seg.words)
                     skip_next = True
             else:
                 pass  # Final Segment edge case

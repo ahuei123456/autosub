@@ -1,4 +1,4 @@
-from autosub.core.schemas import SubtitleCue, SubtitleDocument
+from autosub.core.schemas import SubtitleCue, SubtitleDocument, TranscribedWord
 from autosub.pipeline.postprocess.main import _ensure_quoted, postprocess_subtitles
 
 
@@ -74,6 +74,42 @@ def test_postprocess_quotes_only_translated_line_in_bilingual_mode(tmp_path):
         output_path.read_text(encoding="utf-8")
     )
     assert document.cues[0].final_text == '"This is my first message."'
+
+
+def test_postprocess_preserves_source_words(tmp_path):
+    input_path = tmp_path / "translated.json"
+    output_path = tmp_path / "postprocessed.json"
+    _write_translated_document(
+        input_path,
+        [
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="メールです。",
+                translated_text="This is a listener message.",
+                role="listener_mail",
+                words=[
+                    TranscribedWord(word="メール", start_time=0.0, end_time=0.5),
+                    TranscribedWord(word="です。", start_time=0.5, end_time=1.0),
+                ],
+            )
+        ],
+    )
+
+    postprocess_subtitles(
+        input_path,
+        output_json_path=output_path,
+        extensions_config={"radio_discourse": {"enabled": True}},
+        bilingual=False,
+    )
+
+    document = SubtitleDocument.model_validate_json(
+        output_path.read_text(encoding="utf-8")
+    )
+    assert document.stage == "postprocessed"
+    assert document.cues[0].final_text == '"This is a listener message."'
+    assert [word.word for word in document.cues[0].words] == ["メール", "です。"]
 
 
 def test_postprocess_collapses_double_outer_quotes_in_replace_mode(tmp_path):

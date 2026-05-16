@@ -132,13 +132,11 @@ def _apply_combined_extensions(
     result: list[SubtitleLine] = []
     for line, role, corner in zip(processed, roles, merged_corners, strict=False):
         result.append(
-            SubtitleLine(
-                text=line.text,
-                start_time=line.start_time,
-                end_time=line.end_time,
-                speaker=line.speaker,
-                role=role if label_roles else None,
-                corner=corner,
+            line.model_copy(
+                update={
+                    "role": role if label_roles else None,
+                    "corner": corner,
+                }
             )
         )
 
