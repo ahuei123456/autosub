@@ -4,6 +4,8 @@ import ffmpeg
 from pathlib import Path
 from uuid import uuid4
 
+from autosub.core.ffmpeg_bin import FFMPEG_BIN, FFPROBE_BIN
+
 logger = logging.getLogger(__name__)
 
 MAX_CHUNK_MINUTES = 18  # stay under Chirp 3's 20-min word-timestamp limit
@@ -56,7 +58,7 @@ def extract_audio(
                 **output_args,
             )
             .overwrite_output()
-            .run(capture_stdout=True, capture_stderr=True)
+            .run(cmd=FFMPEG_BIN, capture_stdout=True, capture_stderr=True)
         )
     except ffmpeg.Error as e:
         error_message = e.stderr.decode() if e.stderr else "Unknown ffmpeg error"
@@ -90,7 +92,7 @@ def split_audio(
                 ffmpeg.input(str(audio_path), ss=str(start), t=str(chunk_duration))
                 .output(str(chunk_path), acodec="copy", loglevel="error")
                 .overwrite_output()
-                .run(capture_stdout=True, capture_stderr=True)
+                .run(cmd=FFMPEG_BIN, capture_stdout=True, capture_stderr=True)
             )
         except ffmpeg.Error as e:
             error_message = e.stderr.decode() if e.stderr else "Unknown ffmpeg error"
@@ -113,7 +115,7 @@ def split_audio(
 def get_audio_duration(audio_path: Path) -> float:
     """Returns the duration of the audio file in seconds using ffprobe."""
     try:
-        probe = ffmpeg.probe(str(audio_path))
+        probe = ffmpeg.probe(str(audio_path), cmd=FFPROBE_BIN)
         return float(probe["format"]["duration"])
     except ffmpeg.Error as e:
         error_message = e.stderr.decode() if e.stderr else "Unknown ffprobe error"

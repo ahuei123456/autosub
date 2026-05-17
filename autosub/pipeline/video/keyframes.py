@@ -3,6 +3,8 @@ import subprocess
 from pathlib import Path
 import ffmpeg
 
+from autosub.core.ffmpeg_bin import FFPROBE_BIN
+
 
 def check_dependencies() -> None:
     """Verifies that ffmpeg and SCXvid exist in the system PATH."""
@@ -59,7 +61,7 @@ def extract_keyframes(video_path: Path, output_path: Path) -> None:
 def get_fps(video_path: Path) -> float:
     """Gets the exact frame rate of a video using ffprobe."""
     try:
-        probe = ffmpeg.probe(str(video_path))
+        probe = ffmpeg.probe(str(video_path), cmd=FFPROBE_BIN)
         video_stream = next(
             (
                 stream

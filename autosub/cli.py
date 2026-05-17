@@ -996,8 +996,9 @@ def run(
         fps = get_fps(video_path)
         if fps > 0:
             import ffmpeg
+            from autosub.core.ffmpeg_bin import FFPROBE_BIN
 
-            probe = ffmpeg.probe(str(video_path))
+            probe = ffmpeg.probe(str(video_path), cmd=FFPROBE_BIN)
             try:
                 vid_duration_ms = int(float(probe["format"]["duration"]) * 1000)
             except Exception:
