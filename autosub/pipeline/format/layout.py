@@ -34,15 +34,14 @@ def wrap_subtitle_lines(
     wrapped_lines: list[SubtitleLine] = []
     for line in lines:
         wrapped_lines.append(
-            SubtitleLine(
-                text=_wrap_text(
-                    line.text,
-                    max_line_width=max_line_width,
-                    max_lines=max_lines_per_subtitle,
-                ),
-                start_time=line.start_time,
-                end_time=line.end_time,
-                speaker=line.speaker,
+            line.model_copy(
+                update={
+                    "text": _wrap_text(
+                        line.text,
+                        max_line_width=max_line_width,
+                        max_lines=max_lines_per_subtitle,
+                    )
+                }
             )
         )
 

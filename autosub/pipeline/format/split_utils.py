@@ -9,23 +9,25 @@ def find_split_time(line: SubtitleLine, split_char_pos: int) -> float:
     audio timestamp at which to split.
 
     Resolution order:
-    1. If line.words already concatenate to line.text, walk those normalized
-       words directly and return the boundary word's end_time.
-    2. If split_char_pos falls inside a replacement span, snap to the end of the
-       original source text (span.orig_end) — avoids character-count mismatch
-       caused by replacements that change string length.
-    3. Otherwise, adjust split_char_pos for the cumulative length delta of all
-       replacement spans that ended before the split point, converting from
-       replaced-text coordinates to original word-text coordinates.
-    4. Walk line.words accumulating character lengths until the running total
-       meets or exceeds orig_pos; return that word's end_time.
-    5. Falls back to proportional estimation when line.words is empty.
+    1. If no replacement spans exist and line.words already concatenate to
+       line.text, walk those words directly and return the boundary word's
+       end_time.
+    2. If replacement spans exist and line.words are still in original-text
+       coordinates, map split_char_pos back through replacement spans to an
+       original-text character position, then resolve that character position
+       against the original word ranges.
+    3. If replacement spans exist but line.words have already been normalized to
+       line.text, resolve split_char_pos directly against normalized word ranges,
+       interpolating inside merged replacement words instead of snapping to the
+       merged word's end.
+    4. Falls back to proportional estimation when line.words is empty.
     """
     if not line.words:
         ratio = split_char_pos / max(len(line.text), 1)
         return line.start_time + (line.end_time - line.start_time) * ratio
 
-    if "".join(word.word for word in line.words) == line.text:
+    word_text = "".join(word.word for word in line.words)
+    if not line.replacement_spans and word_text == line.text:
         accumulated = 0
         for word in line.words:
             accumulated += len(word.word)
@@ -33,28 +35,62 @@ def find_split_time(line: SubtitleLine, split_char_pos: int) -> float:
                 return word.end_time
         return line.words[-1].end_time
 
-    # Case 1: split lands inside a replacement span → snap to orig_end
-    for span in line.replacement_spans:
-        if span.replaced_start <= split_char_pos < span.replaced_end:
-            orig_pos = span.orig_end
-            break
-    else:
-        # Case 2: adjust for all replacements that ended before the split point
-        offset = sum(
-            (span.replaced_end - span.replaced_start)
-            - (span.orig_end - span.orig_start)
-            for span in line.replacement_spans
-            if span.replaced_end <= split_char_pos
-        )
-        orig_pos = split_char_pos - offset
+    if line.replacement_spans and word_text == line.text:
+        return _time_at_char_position(line.words, float(split_char_pos))
 
-    # Case 3: walk words to find which one covers orig_pos
-    accumulated = 0
-    for word in line.words:
-        accumulated += len(word.word)
-        if accumulated >= orig_pos:
-            return word.end_time
-    return line.words[-1].end_time
+    orig_pos = _replaced_to_original_char_position(
+        line.replacement_spans, float(split_char_pos)
+    )
+    return _time_at_char_position(line.words, orig_pos)
+
+
+def _replaced_to_original_char_position(
+    spans: list[ReplacementSpan], split_char_pos: float
+) -> float:
+    for span in spans:
+        if span.replaced_start <= split_char_pos <= span.replaced_end:
+            replaced_len = span.replaced_end - span.replaced_start
+            if replaced_len <= 0:
+                return float(span.orig_end)
+            ratio = (split_char_pos - span.replaced_start) / replaced_len
+            orig_len = span.orig_end - span.orig_start
+            return span.orig_start + (orig_len * ratio)
+
+    offset = sum(
+        (span.replaced_end - span.replaced_start) - (span.orig_end - span.orig_start)
+        for span in spans
+        if span.replaced_end <= split_char_pos
+    )
+    return split_char_pos - offset
+
+
+def _time_at_char_position(words: list[TranscribedWord], char_pos: float) -> float:
+    if not words:
+        return 0.0
+    if char_pos <= 0:
+        return words[0].start_time
+
+    accumulated = 0.0
+    for word in words:
+        word_len = len(word.word)
+        next_accumulated = accumulated + word_len
+        if char_pos <= next_accumulated:
+            return _interpolate_word_time(word, char_pos - accumulated)
+        accumulated = next_accumulated
+
+    return words[-1].end_time
+
+
+def _interpolate_word_time(word: TranscribedWord, char_offset: float) -> float:
+    word_len = len(word.word)
+    if word_len <= 0:
+        return word.start_time
+    if char_offset <= 0:
+        return word.start_time
+    if char_offset >= word_len:
+        return word.end_time
+    ratio = char_offset / word_len
+    return word.start_time + ((word.end_time - word.start_time) * ratio)
 
 
 def partition_words(

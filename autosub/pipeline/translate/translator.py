@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from autosub.core.errors import VertexResponseShapeError
 from autosub.core.llm import BaseStructuredLLM, ReasoningEffort
+from autosub.core.schemas import SubtitleCue
 from autosub.pipeline.translate.base import BaseTranslator
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,16 @@ logger = logging.getLogger(__name__)
 class TranslatedSubtitle(BaseModel):
     id: int
     translated: str
+
+
+class SubtitleTranslationInput(BaseModel):
+    id: int
+    text: str
+    start_time: float
+    end_time: float
+    speaker: str | None = None
+    role: str | None = None
+    corner: str | None = None
 
 
 class VertexTranslator(BaseTranslator, BaseStructuredLLM):
@@ -73,17 +84,18 @@ class VertexTranslator(BaseTranslator, BaseStructuredLLM):
             f"Translation requirements:\n"
             f"1. The input lines are sequential pieces of continuous spoken dialogue.\n"
             f"2. Do not translate each line in isolation. Understand the thought across neighboring lines before deciding wording.\n"
-            f"3. If one sentence is split across multiple subtitle lines, translate the full thought naturally and distribute the English across those lines so the flow still reads naturally line by line.\n"
-            f"4. Prioritize natural subtitle English over literal wording, but do not invent information.\n"
-            f"5. Keep the tone, emotional intent, and speaker persona intact.\n"
-            f"6. Keep translations concise enough to work as readable subtitles.\n"
-            f"7. If a line contains a catchphrase, segment title, fandom reference, or recurring term, translate it consistently with the provided context.\n"
-            f"8. If a Glossary is provided in the context, you MUST use the exact English translations specified for those terms.\n"
-            f"9. Prefer ending subtitle lines on natural punctuation whenever possible. If a clause can end with a comma, period, question mark, or exclamation point, keep that punctuation at the end of the line instead of leaving a dangling conjunction or connective there.\n"
-            f"10. Move trailing connectives such as 'but', 'and', 'so', 'because', 'though', or 'then' onto the following line.\n"
-            f"11. Only use single quotes for contractions. Anywhere else, always use double quotation marks.\n"
-            f"12. If a name is a Japanese name, preserve Japanese name order when translating.\n"
-            f"13. Do not use the em-dash character (—) in translations. When separating clauses, prefer to end the current sentence or use a comma to separate causes while making it sound natural in English. Use ellipsis only if the speaker is trailing off before starting the next line.\n"
+            f"3. Some inputs include timing, speaker, role, or corner metadata. Use those fields as context for tone and continuity, but translate only the text field.\n"
+            f"4. If one sentence is split across multiple subtitle lines, translate the full thought naturally and distribute the English across those lines so the flow still reads naturally line by line.\n"
+            f"5. Prioritize natural subtitle English over literal wording, but do not invent information.\n"
+            f"6. Keep the tone, emotional intent, and speaker persona intact.\n"
+            f"7. Keep translations concise enough to work as readable subtitles.\n"
+            f"8. If a line contains a catchphrase, segment title, fandom reference, or recurring term, translate it consistently with the provided context.\n"
+            f"9. If a Glossary is provided in the context, you MUST use the exact English translations specified for those terms.\n"
+            f"10. Prefer ending subtitle lines on natural punctuation whenever possible. If a clause can end with a comma, period, question mark, or exclamation point, keep that punctuation at the end of the line instead of leaving a dangling conjunction or connective there.\n"
+            f"11. Move trailing connectives such as 'but', 'and', 'so', 'because', 'though', or 'then' onto the following line.\n"
+            f"12. Only use single quotes for contractions. Anywhere else, always use double quotation marks.\n"
+            f"13. If a name is a Japanese name, preserve Japanese name order when translating.\n"
+            f"14. Do not use the em-dash character (—) in translations. When separating clauses, prefer to end the current sentence or use a comma to separate causes while making it sound natural in English. Use ellipsis only if the speaker is trailing off before starting the next line.\n"
         )
         if self.system_prompt:
             instruction += (
@@ -104,7 +116,45 @@ class VertexTranslator(BaseTranslator, BaseStructuredLLM):
         )
 
         system_instruction = self._get_system_instruction(len(texts))
-        payload = [{"id": i, "text": t} for i, t in enumerate(texts)]
+        payload: list[dict[str, object]] = [
+            {"id": i, "text": t} for i, t in enumerate(texts)
+        ]
+        return self._translate_payload(payload, system_instruction, len(texts))
+
+    def translate_cues(self, cues: list[SubtitleCue]) -> list[str]:
+        if not cues:
+            return []
+
+        texts = [cue.normalized_source_text or cue.source_text for cue in cues]
+        logger.info(
+            "Translating %s structured subtitle cues using provider '%s' model '%s' in '%s'...",
+            len(cues),
+            self.provider,
+            self.model,
+            self.location,
+        )
+
+        system_instruction = self._get_system_instruction(len(cues))
+        payload = [
+            SubtitleTranslationInput(
+                id=i,
+                text=text,
+                start_time=cue.start_time,
+                end_time=cue.end_time,
+                speaker=cue.speaker,
+                role=cue.role,
+                corner=cue.corner,
+            ).model_dump()
+            for i, (cue, text) in enumerate(zip(cues, texts, strict=True))
+        ]
+        return self._translate_payload(payload, system_instruction, len(cues))
+
+    def _translate_payload(
+        self,
+        payload: list[dict[str, object]],
+        system_instruction: str,
+        num_lines: int,
+    ) -> list[str]:
         contents = json.dumps(payload, ensure_ascii=False, indent=2)
 
         translations, diagnostics = self._run_structured_output(
@@ -128,10 +178,10 @@ class VertexTranslator(BaseTranslator, BaseStructuredLLM):
             translated_texts = [item.translated for item in ordered_translations]
             returned_ids = [item.id for item in ordered_translations]
 
-            if returned_ids != list(range(len(texts))):
+            if returned_ids != list(range(num_lines)):
                 raise ValueError(f"returned ids were {returned_ids!r}")
 
-            if len(translated_texts) != len(texts):
+            if len(translated_texts) != num_lines:
                 logger.warning(
                     "Warning: LLM returned a different number of translations than inputs. Subtitles may misalign."
                 )

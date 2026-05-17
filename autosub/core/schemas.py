@@ -1,6 +1,6 @@
 from typing import List, Literal, NamedTuple
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TranscribedWord(BaseModel):
@@ -40,8 +40,9 @@ class ReplacementSpan(NamedTuple):
     replaced_end: int
 
 
-class SubtitleLine(BaseModel):
-    text: str
+class TimedSubtitleFields(BaseModel):
+    """Shared timing and metadata fields for render lines and pipeline cues."""
+
     start_time: float
     end_time: float
     speaker: str | None = None
@@ -49,3 +50,36 @@ class SubtitleLine(BaseModel):
     corner: str | None = None
     words: List[TranscribedWord] = Field(default_factory=list)
     replacement_spans: List[ReplacementSpan] = Field(default_factory=list)
+
+
+class SubtitleLine(TimedSubtitleFields):
+    text: str
+
+
+class SubtitleMetadata(BaseModel):
+    source_transcripts: List[str] = Field(default_factory=list)
+    transcribe_metadata: List[TranscriptionMetadata] = Field(default_factory=list)
+
+
+class SubtitleCue(TimedSubtitleFields):
+    id: str
+    source_text: str
+    normalized_source_text: str | None = None
+    translated_text: str | None = None
+    final_text: str | None = None
+
+
+class SubtitleDocument(BaseModel):
+    """Versioned pipeline document.
+
+    Cue IDs are stable within one pipeline run, but not guaranteed across
+    runs or future cue insertion/resegmentation.
+    """
+
+    model_config = ConfigDict(validate_assignment=True)
+
+    schema_version: Literal[1] = 1
+    stage: Literal["formatted", "translated", "postprocessed"]
+    metadata: SubtitleMetadata = Field(default_factory=SubtitleMetadata)
+    chunk_boundaries: List[int] = Field(default_factory=list)
+    cues: List[SubtitleCue] = Field(default_factory=list)

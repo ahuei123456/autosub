@@ -2,9 +2,9 @@
 
 import pyass
 
-from autosub.core.schemas import SubtitleLine
+from autosub.core.schemas import SubtitleCue, SubtitleDocument, SubtitleLine
 from autosub.pipeline.format.generator import generate_ass_file
-from autosub.pipeline.translate.main import _extract_corner_boundaries
+from autosub.pipeline.translate.main import _extract_corner_boundaries_from_cues
 
 
 def _line(text, start=0.0, end=1.0, corner=None, role=None):
@@ -79,91 +79,71 @@ def test_generator_multiple_corners(tmp_path):
     assert "Ending" in comments[2].text
 
 
-# --- _extract_corner_boundaries ---
+# --- _extract_corner_boundaries_from_cues ---
 
 
-def _dialogue(text, start=0.0):
-    return pyass.Event(
-        format=pyass.EventFormat.DIALOGUE,
-        start=pyass.timedelta(seconds=start),
-        end=pyass.timedelta(seconds=start + 1.0),
-        text=text,
-    )
-
-
-def _corner_comment(name, start=0.0):
-    return pyass.Event(
-        format=pyass.EventFormat.COMMENT,
-        start=pyass.timedelta(seconds=start),
-        end=pyass.timedelta(seconds=start + 1.0),
-        effect="corner",
-        text=f"=== Corner: {name} ===",
-    )
-
-
-def _regular_comment(text, start=0.0):
-    return pyass.Event(
-        format=pyass.EventFormat.COMMENT,
-        start=pyass.timedelta(seconds=start),
-        end=pyass.timedelta(seconds=start + 1.0),
-        text=text,
+def _cue(text, index, corner=None):
+    return SubtitleCue(
+        id=f"cue-{index:05d}",
+        start_time=float(index),
+        end_time=float(index + 1),
+        source_text=text,
+        corner=corner,
     )
 
 
 def test_extract_boundaries_basic():
-    d0 = _dialogue("line 0", start=0.0)
-    d1 = _dialogue("line 1", start=1.0)
-    d2 = _dialogue("line 2", start=2.0)
-    d3 = _dialogue("line 3", start=3.0)
+    document = SubtitleDocument(
+        stage="formatted",
+        cues=[
+            _cue("line 0", 0),
+            _cue("line 1", 1, corner="Fan Letter"),
+            _cue("line 2", 2),
+            _cue("line 3", 3, corner="Song Corner"),
+        ],
+    )
 
-    all_events = [
-        d0,
-        _corner_comment("Fan Letter", start=1.0),
-        d1,
-        d2,
-        _corner_comment("Song Corner", start=3.0),
-        d3,
-    ]
-    events_to_translate = [d0, d1, d2, d3]
-
-    boundaries = _extract_corner_boundaries(all_events, events_to_translate)
+    boundaries = _extract_corner_boundaries_from_cues(document)
     assert boundaries == [1, 3]
 
 
 def test_extract_boundaries_no_corners():
-    d0 = _dialogue("line 0")
-    d1 = _dialogue("line 1")
-    all_events = [d0, d1]
-    boundaries = _extract_corner_boundaries(all_events, [d0, d1])
+    document = SubtitleDocument(
+        stage="formatted", cues=[_cue("line 0", 0), _cue("line 1", 1)]
+    )
+
+    boundaries = _extract_corner_boundaries_from_cues(document)
     assert boundaries == []
 
 
-def test_extract_boundaries_ignores_regular_comments():
-    d0 = _dialogue("line 0")
-    d1 = _dialogue("line 1")
-    all_events = [d0, _regular_comment("just a note"), d1]
-    boundaries = _extract_corner_boundaries(all_events, [d0, d1])
+def test_extract_boundaries_skips_empty_source_text():
+    document = SubtitleDocument(
+        stage="formatted",
+        cues=[_cue("line 0", 0), _cue("", 1, corner="Ignored"), _cue("line 1", 2)],
+    )
+
+    boundaries = _extract_corner_boundaries_from_cues(document)
     assert boundaries == []
 
 
 def test_extract_boundaries_corner_at_start():
-    d0 = _dialogue("line 0")
-    d1 = _dialogue("line 1")
-    all_events = [_corner_comment("Opening"), d0, d1]
-    boundaries = _extract_corner_boundaries(all_events, [d0, d1])
+    document = SubtitleDocument(
+        stage="formatted", cues=[_cue("line 0", 0, corner="Opening"), _cue("line 1", 1)]
+    )
+
+    boundaries = _extract_corner_boundaries_from_cues(document)
     assert boundaries == [0]
 
 
-def test_extract_boundaries_consecutive_corners():
-    """Two corner comments before same dialogue line — both map to same index."""
-    d0 = _dialogue("line 0")
-    d1 = _dialogue("line 1")
-    all_events = [
-        d0,
-        _corner_comment("A"),
-        _corner_comment("B"),
-        d1,
-    ]
-    # Both corners point to dialogue index 1, but only the last pending is captured
-    boundaries = _extract_corner_boundaries(all_events, [d0, d1])
-    assert 1 in boundaries
+def test_extract_boundaries_back_to_back_corners():
+    document = SubtitleDocument(
+        stage="formatted",
+        cues=[
+            _cue("line 0", 0),
+            _cue("line 1", 1, corner="A"),
+            _cue("line 2", 2, corner="B"),
+        ],
+    )
+
+    boundaries = _extract_corner_boundaries_from_cues(document)
+    assert boundaries == [1, 2]

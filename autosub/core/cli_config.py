@@ -89,12 +89,14 @@ COMMAND_OPTION_SPECS: dict[str, dict[str, OptionSpec]] = {
     },
     "format": {
         "out": OptionSpec(("out",), _as_path),
+        "json_out": OptionSpec(("json_out",), _as_path),
         "keyframes": OptionSpec(("keyframes",), _as_path),
         "fps": OptionSpec(("fps",), _as_float),
         "profile": OptionSpec(("profile",), _as_str),
     },
     "translate": {
         "out": OptionSpec(("out",), _as_path),
+        "ass_out": OptionSpec(("ass_out",), _as_path),
         "engine": OptionSpec(("engine",), _as_str),
         "prompt": OptionSpec(("prompt",), _as_str),
         "profile": OptionSpec(("profile",), _as_str),
@@ -127,6 +129,7 @@ COMMAND_OPTION_SPECS: dict[str, dict[str, OptionSpec]] = {
     },
     "postprocess": {
         "out": OptionSpec(("out",), _as_path),
+        "ass_out": OptionSpec(("ass_out",), _as_path),
         "profile": OptionSpec(("profile",), _as_str),
         "bilingual": OptionSpec(("bilingual",), _as_bool),
     },

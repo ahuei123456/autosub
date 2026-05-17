@@ -118,13 +118,7 @@ def apply_radio_discourse(
     classified_lines: list[SubtitleLine] = []
     for line, role in zip(processed_lines, resolved_roles, strict=False):
         classified_lines.append(
-            SubtitleLine(
-                text=line.text,
-                start_time=line.start_time,
-                end_time=line.end_time,
-                speaker=line.speaker,
-                role=role if label_roles else None,
-            )
+            line.model_copy(update={"role": role if label_roles else None})
         )
 
     return classified_lines
@@ -163,21 +157,21 @@ def split_host_meta_suffix(line: SubtitleLine) -> list[SubtitleLine]:
         )
 
         return [
-            SubtitleLine(
-                text=main_text,
-                start_time=line.start_time,
-                end_time=split_time,
-                speaker=line.speaker,
-                words=first_words,
-                replacement_spans=first_spans,
+            line.model_copy(
+                update={
+                    "text": main_text,
+                    "end_time": split_time,
+                    "words": first_words,
+                    "replacement_spans": first_spans,
+                }
             ),
-            SubtitleLine(
-                text=suffix,
-                start_time=split_time,
-                end_time=line.end_time,
-                speaker=line.speaker,
-                words=second_words,
-                replacement_spans=second_spans,
+            line.model_copy(
+                update={
+                    "text": suffix,
+                    "start_time": split_time,
+                    "words": second_words,
+                    "replacement_spans": second_spans,
+                }
             ),
         ]
 
