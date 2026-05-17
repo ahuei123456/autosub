@@ -1,11 +1,14 @@
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 import autosub.pipeline.translate.main as translate_main_module
 import autosub.pipeline.translate.translator as translator_module
 
 from autosub.pipeline.translate.main import (
     _compute_fingerprint,
+    _is_read_timeout,
+    _translate_chunk_with_timeout_retry,
     _translate_chunked,
     _load_checkpoint,
     _save_checkpoint,
@@ -33,6 +36,77 @@ class FailNTimesTranslator:
         if self.attempts <= self.fail_count:
             raise ConnectionError("Server disconnected without sending a response.")
         return [f"translated:{t}" for t in texts]
+
+
+# --- Retry-on-timeout helper tests ---
+
+
+class TimeoutNTimesTranslator:
+    """Translator that raises a wrapped ReadTimeout N times then succeeds."""
+
+    def __init__(self, fail_count: int):
+        self.fail_count = fail_count
+        self.attempts = 0
+
+    def translate(self, texts: list[str]) -> list[str]:
+        self.attempts += 1
+        if self.attempts <= self.fail_count:
+            # Simulate the real call chain: VertexRequestError wraps an
+            # httpx.ReadTimeout via __cause__.
+            cause = httpx.ReadTimeout("read timed out")
+            raise RuntimeError("LLM translator request failed") from cause
+        return [f"translated:{t}" for t in texts]
+
+
+def test_is_read_timeout_direct():
+    assert _is_read_timeout(httpx.ReadTimeout("x"))
+
+
+def test_is_read_timeout_chained():
+    try:
+        try:
+            raise httpx.ReadTimeout("x")
+        except Exception as e:
+            raise RuntimeError("wrapper") from e
+    except RuntimeError as outer:
+        assert _is_read_timeout(outer)
+
+
+def test_is_read_timeout_unrelated():
+    assert not _is_read_timeout(ValueError("nope"))
+    assert not _is_read_timeout(ConnectionError("nope"))
+
+
+def test_retry_recovers_after_one_timeout(monkeypatch):
+    monkeypatch.setattr(translate_main_module.time, "sleep", lambda _: None)
+    translator = TimeoutNTimesTranslator(fail_count=1)
+
+    result = _translate_chunk_with_timeout_retry(translator, ["a", "b"], 1, 1)
+
+    assert result == ["translated:a", "translated:b"]
+    assert translator.attempts == 2
+
+
+def test_retry_gives_up_after_exhausting_attempts(monkeypatch):
+    monkeypatch.setattr(translate_main_module.time, "sleep", lambda _: None)
+    # Default policy is 2 retries, so 3 total attempts.
+    translator = TimeoutNTimesTranslator(fail_count=10)
+
+    with pytest.raises(RuntimeError):
+        _translate_chunk_with_timeout_retry(translator, ["a"], 1, 1)
+
+    assert translator.attempts == 3
+
+
+def test_retry_does_not_swallow_non_timeout_errors(monkeypatch):
+    monkeypatch.setattr(translate_main_module.time, "sleep", lambda _: None)
+    translator = FailNTimesTranslator(fail_count=10)  # raises ConnectionError
+
+    with pytest.raises(ConnectionError):
+        _translate_chunk_with_timeout_retry(translator, ["a"], 1, 1)
+
+    # Only one attempt — non-timeout errors must surface immediately.
+    assert translator.attempts == 1
 
 
 # --- Error report tests ---

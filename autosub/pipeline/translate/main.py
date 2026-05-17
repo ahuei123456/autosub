@@ -1,15 +1,36 @@
 import hashlib
 import json
 import logging
+import time
 import traceback
 from pathlib import Path
 
+import httpx
 import pyass
 from autosub.core.config import PROJECT_ID
 from autosub.core.llm import ReasoningEffort
 from autosub.pipeline.translate.chunker import make_chunks
 
 logger = logging.getLogger(__name__)
+
+# Retry policy for per-chunk translation when the provider stalls. Most
+# transient hangs on Vertex (especially preview models like
+# gemini-3-flash-preview) recover on a second attempt. Total wall time per
+# chunk in the worst case is ~10min + 30s + 60s + 10min = ~21min before we
+# surface the failure.
+_RETRY_BACKOFF_SECONDS = (30, 60)
+
+
+def _is_read_timeout(exc: BaseException) -> bool:
+    """True if exc or any cause/context is an httpx ReadTimeout."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, httpx.ReadTimeout):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def _compute_fingerprint(
@@ -338,6 +359,40 @@ def _save_checkpoint(
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
+def _translate_chunk_with_timeout_retry(
+    translator,
+    chunk: list[str],
+    chunk_num: int,
+    total_chunks: int,
+) -> list[str]:
+    """Translate one chunk, retrying on httpx.ReadTimeout with backoff.
+
+    Only retries on read timeouts (transient provider stalls). Any other
+    failure surfaces immediately so structural errors are not masked.
+    """
+    last_exc: Exception | None = None
+    for attempt, backoff in enumerate((0,) + _RETRY_BACKOFF_SECONDS):
+        if backoff:
+            logger.warning(
+                f"  Chunk {chunk_num}/{total_chunks} timed out — "
+                f"retrying in {backoff}s "
+                f"(attempt {attempt + 1}/{len(_RETRY_BACKOFF_SECONDS) + 1})..."
+            )
+            time.sleep(backoff)
+        try:
+            return translator.translate(chunk)
+        except Exception as exc:
+            if not _is_read_timeout(exc):
+                raise
+            last_exc = exc
+    assert last_exc is not None
+    logger.error(
+        f"  Chunk {chunk_num}/{total_chunks} failed after "
+        f"{len(_RETRY_BACKOFF_SECONDS) + 1} read-timeout attempts."
+    )
+    raise last_exc
+
+
 def _translate_chunked(
     translator,
     texts: list[str],
@@ -407,7 +462,9 @@ def _translate_chunked(
         )
         logger.info(f"    first: {first}")
         logger.info(f"    last:  {last}")
-        results = translator.translate(chunk)
+        results = _translate_chunk_with_timeout_retry(
+            translator, chunk, chunk_idx + 1, len(chunks)
+        )
         completed[chunk_idx] = results
         _save_checkpoint(checkpoint_path, completed, fingerprint)
 
