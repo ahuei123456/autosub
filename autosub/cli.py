@@ -518,10 +518,14 @@ def translate(
         help="Include original text on top, or replace completely.",
     ),
     chunk_size: int = typer.Option(
-        0,
+        80,
         "--chunk-size",
         min=0,
-        help="Number of subtitle lines per chunk. Use 0 to disable chunking.",
+        help=(
+            "Number of subtitle lines per chunk. Use 0 to disable chunking and "
+            "send the whole script in one request (not recommended for long "
+            "transcripts — long single requests are prone to provider timeouts)."
+        ),
     ),
     mark_chunks: bool = typer.Option(
         False,
@@ -813,10 +817,14 @@ def run(
         help="End time for transcription (e.g. 00:04:00 or 240). Can be passed multiple times and pairs by order with --start.",
     ),
     chunk_size: int = typer.Option(
-        0,
+        80,
         "--chunk-size",
         min=0,
-        help="Number of subtitle lines per chunk. Use 0 to disable chunking.",
+        help=(
+            "Number of subtitle lines per chunk. Use 0 to disable chunking and "
+            "send the whole script in one request (not recommended for long "
+            "transcripts — long single requests are prone to provider timeouts)."
+        ),
     ),
     mark_chunks: bool = typer.Option(
         False,
