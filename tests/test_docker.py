@@ -9,6 +9,7 @@ DOCKERFILE = ROOT / "Dockerfile"
 DOCKERIGNORE = ROOT / ".dockerignore"
 GCLOUDIGNORE = ROOT / ".gcloudignore"
 COMPOSEFILE = ROOT / "docker-compose.yml"
+ENV_EXAMPLE = ROOT / ".env.example"
 
 
 # ── Dockerfile ──────────────────────────────────────────────────────
@@ -29,6 +30,11 @@ class TestDockerfile:
     def test_installs_uv(self):
         content = DOCKERFILE.read_text()
         assert "astral-sh/uv" in content
+
+    def test_uv_version_is_pinned(self):
+        """uv:latest is fragile — should pin to a minor version."""
+        content = DOCKERFILE.read_text()
+        assert "uv:latest" not in content
 
     def test_deps_installed_before_source(self):
         """uv sync for deps should run before COPY . . for layer caching."""
@@ -52,6 +58,11 @@ class TestDockerfile:
         content = DOCKERFILE.read_text()
         sync_lines = [l for l in content.splitlines() if "uv sync" in l]
         assert all("--no-dev" in l for l in sync_lines)
+
+    def test_no_editable_install(self):
+        """--no-editable is redundant in containers — should not be present."""
+        content = DOCKERFILE.read_text()
+        assert "--no-editable" not in content
 
 
 # ── .dockerignore ───────────────────────────────────────────────────
@@ -150,3 +161,25 @@ class TestComposeFile:
 
     def test_passes_gcp_project_env(self, content):
         assert "GOOGLE_CLOUD_PROJECT" in content
+
+    def test_gcp_project_fails_loudly_if_unset(self, content):
+        """Should use :? syntax so missing GOOGLE_CLOUD_PROJECT errors early."""
+        assert ":?" in content
+
+
+# ── .env.example ────────────────────────────────────────────────────
+
+
+class TestEnvExample:
+    def test_exists(self):
+        assert ENV_EXAMPLE.exists()
+
+    def test_documents_gcp_project(self):
+        content = ENV_EXAMPLE.read_text()
+        assert "GOOGLE_CLOUD_PROJECT" in content
+
+    def test_no_real_credentials(self):
+        content = ENV_EXAMPLE.read_text()
+        assert "future-name" not in content
+        assert "sk-ant-" not in content
+        assert "sk-or-" not in content

@@ -152,6 +152,7 @@ venv.bak/
 !/profiles/local/.gitkeep
 /prompts/local/
 !/prompts/local/.gitkeep
+# User-specific deployment scripts (e.g. remote.sh with hardcoded GCP config)
 /scripts/remote.sh
 
 # Spyder project settings

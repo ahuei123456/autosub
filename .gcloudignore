@@ -1,3 +1,7 @@
+# Cloud Build ignore file.
+# Exists separately from .dockerignore because Cloud Build falls back to
+# .gitignore, which excludes profiles/local/ and prompts/local/. Those dirs
+# must be included so the image contains user-specific profiles and prompts.
 .git
 .venv
 .ruff_cache
