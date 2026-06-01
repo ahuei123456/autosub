@@ -116,7 +116,7 @@ scp -r prompts/local/ your-server:~/autosub/prompts/local/
 docker run --rm \
   -v /path/to/projects:/projects \
   -e GOOGLE_CLOUD_PROJECT=your-project-id \
-  autosub translate --profile proseka/mmj /projects/original.ass
+  autosub run /projects/video.mkv --profile proseka/mmj
 ```
 
 On machines without automatic GCP credentials (anything outside GCE), mount your local credentials:
@@ -129,7 +129,7 @@ docker run --rm \
   autosub run /projects/video.mkv --profile proseka/mmj
 ```
 
-Non-GCP providers work without any GCP setup:
+Non-GCP providers work without any GCP setup (translate step only):
 
 ```bash
 docker run --rm \
