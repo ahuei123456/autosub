@@ -112,12 +112,22 @@ scp -r prompts/local/ your-server:~/autosub/prompts/local/
 
 ### Run
 
+Place your input files (video, audio, or `.ass` files) in a directory on the host machine. If running on a remote server, copy them over first:
+
+```bash
+scp video.mkv your-server:~/projects/
+```
+
+Then mount that directory and run:
+
 ```bash
 docker run --rm \
   -v /path/to/projects:/projects \
   -e GOOGLE_CLOUD_PROJECT=your-project-id \
   autosub run /projects/video.mkv --profile proseka/mmj
 ```
+
+Output files (`transcript.json`, `original.ass`, `translated.ass`) are written to the same `/projects` directory and persist on the host after the container exits.
 
 On machines without automatic GCP credentials (anything outside GCE), mount your local credentials:
 
