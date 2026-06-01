@@ -152,6 +152,7 @@ venv.bak/
 !/profiles/local/.gitkeep
 /prompts/local/
 !/prompts/local/.gitkeep
+/scripts/remote.sh
 
 # Spyder project settings
 .spyderproject

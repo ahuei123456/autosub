@@ -1,8 +1,8 @@
 services:
   autosub:
-    image: us-central1-docker.pkg.dev/future-name-201021/autosub/autosub:latest
+    image: ${AUTOSUB_IMAGE:-autosub:latest}
     volumes:
-      - /home/michaelting/projects:/projects
+      - ${AUTOSUB_PROJECTS_DIR:-./projects}:/projects
     environment:
-      - GOOGLE_CLOUD_PROJECT=future-name-201021
-      - AUTOSUB_GCS_BUCKET=subtitling-projects
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+      - AUTOSUB_GCS_BUCKET=${AUTOSUB_GCS_BUCKET:-}
