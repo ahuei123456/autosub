@@ -91,6 +91,62 @@ uv run python -c "import torch; print(torch.__version__); print(torch.version.cu
 
 You want to see a CUDA-tagged build such as `+cu128`, a non-`None` CUDA version, and `True`.
 
+## Docker
+
+autosub can run in a Docker container with no local Python, uv, or FFmpeg installation required.
+
+### Build
+
+```bash
+git clone https://github.com/mting314/autosub.git && cd autosub
+docker build -t autosub .
+```
+
+To include local profiles and prompts (which are gitignored), copy them into the repo before building:
+
+```bash
+# from another machine, if building on a remote server
+scp -r profiles/local/ your-server:~/autosub/profiles/local/
+scp -r prompts/local/ your-server:~/autosub/prompts/local/
+```
+
+### Run
+
+```bash
+docker run --rm \
+  -v /path/to/projects:/projects \
+  -e GOOGLE_CLOUD_PROJECT=your-project-id \
+  autosub translate --profile proseka/mmj /projects/original.ass
+```
+
+On machines without automatic GCP credentials (anything outside GCE), mount your local credentials:
+
+```bash
+docker run --rm \
+  -v /path/to/projects:/projects \
+  -v ~/.config/gcloud:/root/.config/gcloud:ro \
+  -e GOOGLE_CLOUD_PROJECT=your-project-id \
+  autosub run /projects/video.mkv --profile proseka/mmj
+```
+
+Non-GCP providers work without any GCP setup:
+
+```bash
+docker run --rm \
+  -v /path/to/projects:/projects \
+  -e ANTHROPIC_API_KEY=your-key \
+  autosub translate --llm-provider anthropic --model claude-sonnet-4-6 \
+  --profile proseka/mmj /projects/original.ass
+```
+
+### Rebuild after changes
+
+```bash
+git pull && docker build -t autosub .
+```
+
+See `.env.example` for all configurable environment variables.
+
 ## Configuration
 
 Create a `.env` file in the repo root:
