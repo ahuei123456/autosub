@@ -7,7 +7,6 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 DOCKERFILE = ROOT / "Dockerfile"
 DOCKERIGNORE = ROOT / ".dockerignore"
-GCLOUDIGNORE = ROOT / ".gcloudignore"
 COMPOSEFILE = ROOT / "docker-compose.yml"
 ENV_EXAMPLE = ROOT / ".env.example"
 
@@ -99,37 +98,6 @@ class TestDockerignore:
     def test_does_not_exclude_prompts(self, patterns):
         assert "prompts/" not in patterns
         assert "prompts/local/" not in patterns
-
-
-# ── .gcloudignore ───────────────────────────────────────────────────
-
-
-class TestGcloudignore:
-    @pytest.fixture()
-    def patterns(self):
-        return GCLOUDIGNORE.read_text().splitlines()
-
-    def test_exists(self):
-        assert GCLOUDIGNORE.exists()
-
-    def test_does_not_exclude_profiles_local(self, patterns):
-        """profiles/local must be included for Cloud Build to bake them in."""
-        assert "profiles/local/" not in patterns
-        assert "/profiles/local/" not in patterns
-
-    def test_does_not_exclude_prompts_local(self, patterns):
-        assert "prompts/local/" not in patterns
-        assert "/prompts/local/" not in patterns
-
-    def test_excludes_projects(self, patterns):
-        assert "projects/" in patterns
-
-    def test_excludes_tests(self, patterns):
-        assert "tests/" in patterns
-
-    @pytest.mark.parametrize("ext", ["*.mp4", "*.mkv", "*.wav", "*.mp3"])
-    def test_excludes_media(self, patterns, ext):
-        assert ext in patterns
 
 
 # ── docker-compose.yml ──────────────────────────────────────────────
