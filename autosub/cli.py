@@ -28,6 +28,10 @@ logger = logging.getLogger(__name__)
 
 PROFILE_LOAD_ERRORS = (ValueError, FileNotFoundError, tomllib.TOMLDecodeError)
 
+# Default subtitle lines per translation chunk. Chunking by default keeps each
+# request short enough to avoid provider timeouts on long transcripts.
+DEFAULT_CHUNK_SIZE = 80
+
 app = typer.Typer(help="AutoSub CLI for Japanese subtitle generation and translation")
 
 
@@ -518,7 +522,7 @@ def translate(
         help="Include original text on top, or replace completely.",
     ),
     chunk_size: int = typer.Option(
-        80,
+        DEFAULT_CHUNK_SIZE,
         "--chunk-size",
         min=0,
         help=(
@@ -817,7 +821,7 @@ def run(
         help="End time for transcription (e.g. 00:04:00 or 240). Can be passed multiple times and pairs by order with --start.",
     ),
     chunk_size: int = typer.Option(
-        80,
+        DEFAULT_CHUNK_SIZE,
         "--chunk-size",
         min=0,
         help=(

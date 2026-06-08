@@ -209,7 +209,9 @@ def translate_subtitles(
                 log_dir=log_dir,
             )
         else:
-            translated_texts = translator.translate(texts_to_translate)
+            translated_texts = _translate_chunk_with_timeout_retry(
+                translator, texts_to_translate, 1, 1
+            )
     except Exception as exc:
         _write_error_report(error_path, exc)
         logger.error(f"Wrote translation error details to {error_path}.")
