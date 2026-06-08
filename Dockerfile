@@ -14,4 +14,4 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY . .
 RUN uv sync --frozen --no-dev
 
-ENTRYPOINT ["uv", "run", "--no-dev", "autosub"]
+ENTRYPOINT ["uv", "run", "--frozen", "--no-dev", "autosub"]

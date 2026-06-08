@@ -1,4 +1,7 @@
 .git
+.env
+.envrc
+config.toml
 .venv
 .ruff_cache
 .mypy_cache

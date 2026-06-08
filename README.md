@@ -95,6 +95,8 @@ You want to see a CUDA-tagged build such as `+cu128`, a non-`None` CUDA version,
 
 autosub can run in a Docker container with no local Python, uv, or FFmpeg installation required.
 
+The image targets the cloud STT backends (`chirp_2`, `chirp_3`) plus LLM translation. The local `whisperx` backend is **not** available in the container — the CPU `python:3.12-slim` image does not install the optional `whisperx` extra or a CUDA-enabled PyTorch build, so run WhisperX outside Docker (see the WhisperX section above).
+
 ### Build
 
 ```bash
@@ -154,6 +156,17 @@ docker run --rm \
 ```bash
 git pull && docker build -t autosub .
 ```
+
+### docker compose
+
+`docker-compose.yml` wraps the same image with `build: .`, a `./projects` mount, and env-var pass-through. Copy `.env.example` to `.env`, fill in the values you need, then:
+
+```bash
+docker compose build
+docker compose run --rm autosub run /projects/video.mkv --profile proseka/mmj
+```
+
+Override the host project directory with `AUTOSUB_PROJECTS_DIR` (defaults to `./projects`).
 
 See `.env.example` for all configurable environment variables.
 

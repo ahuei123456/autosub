@@ -1,8 +1,12 @@
 services:
   autosub:
+    build: .
     image: ${AUTOSUB_IMAGE:-autosub:latest}
     volumes:
       - ${AUTOSUB_PROJECTS_DIR:-./projects}:/projects
     environment:
-      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:?Set GOOGLE_CLOUD_PROJECT in .env or environment}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
       - AUTOSUB_GCS_BUCKET=${AUTOSUB_GCS_BUCKET:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}

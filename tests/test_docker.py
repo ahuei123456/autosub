@@ -40,11 +40,13 @@ class TestDockerfile:
         content = DOCKERFILE.read_text()
         lines = content.splitlines()
         first_sync = next(
-            i for i, l in enumerate(lines) if "uv sync" in l
+            (i for i, l in enumerate(lines) if "uv sync" in l), None
         )
         copy_all = next(
-            i for i, l in enumerate(lines) if l.strip() == "COPY . ."
+            (i for i, l in enumerate(lines) if l.strip() == "COPY . ."), None
         )
+        assert first_sync is not None, "no 'uv sync' line found"
+        assert copy_all is not None, "no 'COPY . .' line found"
         assert first_sync < copy_all
 
     def test_no_dev_deps_in_entrypoint(self):
@@ -52,6 +54,13 @@ class TestDockerfile:
         entrypoint_lines = [l for l in content.splitlines() if "ENTRYPOINT" in l]
         assert entrypoint_lines
         assert "--no-dev" in entrypoint_lines[0]
+
+    def test_frozen_in_entrypoint(self):
+        """Entrypoint should pin the lockfile so `uv run` doesn't re-resolve."""
+        content = DOCKERFILE.read_text()
+        entrypoint_lines = [l for l in content.splitlines() if "ENTRYPOINT" in l]
+        assert entrypoint_lines
+        assert "--frozen" in entrypoint_lines[0]
 
     def test_no_dev_deps_in_sync(self):
         content = DOCKERFILE.read_text()
@@ -91,6 +100,11 @@ class TestDockerignore:
     def test_excludes_media(self, patterns, ext):
         assert ext in patterns
 
+    @pytest.mark.parametrize("secret", [".env", ".envrc", "config.toml"])
+    def test_excludes_secret_files(self, patterns, secret):
+        """Gitignored secret/config files must not be baked into the image."""
+        assert secret in patterns
+
     def test_does_not_exclude_profiles(self, patterns):
         assert "profiles/" not in patterns
         assert "profiles/local/" not in patterns
@@ -121,6 +135,11 @@ class TestComposeFile:
     def test_image_is_configurable(self, content):
         assert "AUTOSUB_IMAGE" in content
 
+    def test_has_build_context(self, content):
+        """compose should be able to build the image, not only pull a
+        pre-existing tag — otherwise `docker compose up` fails on a fresh clone."""
+        assert "build:" in content
+
     def test_project_dir_is_configurable(self, content):
         assert "AUTOSUB_PROJECTS_DIR" in content
 
@@ -130,9 +149,18 @@ class TestComposeFile:
     def test_passes_gcp_project_env(self, content):
         assert "GOOGLE_CLOUD_PROJECT" in content
 
-    def test_gcp_project_fails_loudly_if_unset(self, content):
-        """Should use :? syntax so missing GOOGLE_CLOUD_PROJECT errors early."""
-        assert ":?" in content
+    @pytest.mark.parametrize(
+        "key", ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY"]
+    )
+    def test_forwards_llm_provider_keys(self, content, key):
+        """Non-GCP provider keys should be forwarded (defaulted empty)."""
+        assert f"{key}=${{{key}:-}}" in content
+
+    def test_gcp_project_defaults_empty(self, content):
+        """GOOGLE_CLOUD_PROJECT must default empty, not :? — the app reads it
+        lazily and non-GCP providers (anthropic/openai/openrouter) don't need
+        it, so compose must not hard-require it."""
+        assert "GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}" in content
 
 
 # ── .env.example ────────────────────────────────────────────────────
