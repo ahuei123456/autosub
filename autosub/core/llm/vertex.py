@@ -26,6 +26,8 @@ class BaseVertexLLM:
         model: str,
         location: str = "global",
         temperature: float = 0.1,
+        thinking_level: str | None = "MEDIUM",
+        include_thoughts: bool = True,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -33,6 +35,10 @@ class BaseVertexLLM:
         self.model = model
         self.location = location
         self.temperature = temperature
+        # thinking_level=None disables thinking entirely (e.g. for cheap
+        # classification calls that don't need it).
+        self.thinking_level = thinking_level
+        self.include_thoughts = include_thoughts
 
     def _get_client(self) -> genai.Client:
         return genai.Client(
@@ -53,20 +59,22 @@ class BaseVertexLLM:
         logger.debug("%s system instruction:\n%s", operation_name, system_instruction)
         logger.debug("%s input:\n%s", operation_name, contents)
         t0 = time.monotonic()
+        config_kwargs: dict[str, Any] = dict(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            response_schema=response_schema,
+            temperature=self.temperature,
+        )
+        if self.thinking_level is not None:
+            config_kwargs["thinking_config"] = types.ThinkingConfig(
+                thinking_level=self.thinking_level,
+                include_thoughts=self.include_thoughts,
+            )
         try:
             response = client.models.generate_content(
                 model=self.model,
                 contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    response_schema=response_schema,
-                    temperature=self.temperature,
-                    thinking_config=types.ThinkingConfig(
-                        thinking_level="MEDIUM",
-                        include_thoughts=True,
-                    ),
-                ),
+                config=types.GenerateContentConfig(**config_kwargs),
             )
         except Exception as exc:
             elapsed = time.monotonic() - t0

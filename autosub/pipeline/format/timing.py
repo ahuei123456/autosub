@@ -341,10 +341,9 @@ def _apply_interjection_merging(
                     continue
                 else:
                     # EXTEND: close the gap between A's lines (meet in middle)
-                    gap = next_seg.start_ms - prev_seg.end_ms
-                    half_gap = gap // 2
+                    half_gap = span_gap // 2
                     prev_seg.end_ms += half_gap
-                    next_seg.start_ms -= gap - half_gap
+                    next_seg.start_ms -= span_gap - half_gap
         i += 1
 
     return segments
