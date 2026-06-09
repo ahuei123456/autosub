@@ -4,7 +4,7 @@ from autosub.core.schemas import SubtitleLine
 from autosub.extensions.corners.main import (
     apply_corners,
     detect_by_cues,
-    dedup_consecutive,
+    dedup_sticky,
     _merge_detections,
 )
 
@@ -50,44 +50,44 @@ def testdetect_by_cues_empty_lines():
     assert result == []
 
 
-# --- dedup_consecutive ---
+# --- dedup_sticky ---
 
 
-def testdedup_consecutive_basic():
+def testdedup_sticky_basic():
     corners = [None, "A", "A", None, "B", "B", "A"]
-    assert dedup_consecutive(corners) == [None, "A", None, None, "B", None, "A"]
+    assert dedup_sticky(corners) == [None, "A", None, None, "B", None, "A"]
 
 
-def testdedup_consecutive_all_none():
-    assert dedup_consecutive([None, None]) == [None, None]
+def testdedup_sticky_all_none():
+    assert dedup_sticky([None, None]) == [None, None]
 
 
-def testdedup_consecutive_no_dupes():
-    assert dedup_consecutive(["A", "B", "A"]) == ["A", "B", "A"]
+def testdedup_sticky_no_dupes():
+    assert dedup_sticky(["A", "B", "A"]) == ["A", "B", "A"]
 
 
-def test_dedup_consecutive_same_corner_after_none_gap():
+def test_dedup_sticky_same_corner_after_none_gap():
     """Same corner across a None gap is an over-detection and should be suppressed."""
     corners = ["Fan Letter", None, None, "Fan Letter"]
-    assert dedup_consecutive(corners) == ["Fan Letter", None, None, None]
+    assert dedup_sticky(corners) == ["Fan Letter", None, None, None]
 
 
-def test_dedup_consecutive_same_corner_no_gap():
+def test_dedup_sticky_same_corner_no_gap():
     """Truly consecutive same-corner should still be deduped."""
     corners = ["Fan Letter", "Fan Letter", None, "Song"]
-    assert dedup_consecutive(corners) == ["Fan Letter", None, None, "Song"]
+    assert dedup_sticky(corners) == ["Fan Letter", None, None, "Song"]
 
 
-def test_dedup_consecutive_same_corner_after_different_corner():
+def test_dedup_sticky_same_corner_after_different_corner():
     """Same corner returning after a different corner is a real transition — keep it."""
     corners = ["Fan Letter", None, "Song", None, "Fan Letter"]
-    assert dedup_consecutive(corners) == ["Fan Letter", None, "Song", None, "Fan Letter"]
+    assert dedup_sticky(corners) == ["Fan Letter", None, "Song", None, "Fan Letter"]
 
 
-def test_dedup_consecutive_multiple_over_detections():
+def test_dedup_sticky_multiple_over_detections():
     """Multiple over-detections of the same corner across gaps are all suppressed."""
     corners = ["A", None, "A", None, None, "A"]
-    assert dedup_consecutive(corners) == ["A", None, None, None, None, None]
+    assert dedup_sticky(corners) == ["A", None, None, None, None, None]
 
 
 # --- _merge_detections ---
@@ -140,7 +140,7 @@ def test_apply_corners_preserves_role():
     assert result[0].corner == "Fan Letter"
 
 
-def test_apply_cornersdedup_consecutive():
+def test_apply_cornersdedup_sticky():
     lines = [
         _line("お便りをいただきました"),
         _line("お便りの続き"),  # Same corner detected again

@@ -70,8 +70,9 @@ def apply_corners(
     else:
         resolved_corners = cue_corners
 
-    # Deduplicate consecutive same-corner detections
-    resolved_corners = dedup_consecutive(resolved_corners)
+    # Deduplicate repeated same-corner detections across dialogue gaps
+    # (sticky: a corner stays suppressed until a different corner appears)
+    resolved_corners = dedup_sticky(resolved_corners)
 
     result: list[SubtitleLine] = []
     for line, corner in zip(lines, resolved_corners, strict=False):
@@ -134,7 +135,7 @@ def _merge_detections(
     return merged
 
 
-def dedup_consecutive(corners: list[str | None]) -> list[str | None]:
+def dedup_sticky(corners: list[str | None]) -> list[str | None]:
     """Remove duplicate corner names, keeping only the first occurrence
     until a different corner appears.
 
