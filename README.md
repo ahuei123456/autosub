@@ -91,6 +91,85 @@ uv run python -c "import torch; print(torch.__version__); print(torch.version.cu
 
 You want to see a CUDA-tagged build such as `+cu128`, a non-`None` CUDA version, and `True`.
 
+## Docker
+
+autosub can run in a Docker container with no local Python, uv, or FFmpeg installation required.
+
+The image targets the cloud STT backends (`chirp_2`, `chirp_3`) plus LLM translation. The local `whisperx` backend is **not** available in the container — the CPU `python:3.12-slim` image does not install the optional `whisperx` extra or a CUDA-enabled PyTorch build, so run WhisperX outside Docker (see the WhisperX section above).
+
+### Build
+
+```bash
+git clone https://github.com/mting314/autosub.git && cd autosub
+docker build -t autosub .
+```
+
+To include local profiles and prompts (which are gitignored), copy them into the repo before building:
+
+```bash
+# from another machine, if building on a remote server
+scp -r profiles/local/ your-server:~/autosub/profiles/local/
+scp -r prompts/local/ your-server:~/autosub/prompts/local/
+```
+
+### Run
+
+Place your input files (video, audio, or `.ass` files) in a directory on the host machine. If running on a remote server, copy them over first:
+
+```bash
+scp video.mkv your-server:~/projects/
+```
+
+Then mount that directory and run:
+
+```bash
+docker run --rm \
+  -v /path/to/projects:/projects \
+  -e GOOGLE_CLOUD_PROJECT=your-project-id \
+  autosub run /projects/video.mkv --profile proseka/mmj
+```
+
+Output files (`transcript.json`, `original.ass`, `translated.ass`) are written to the same `/projects` directory and persist on the host after the container exits.
+
+On machines without automatic GCP credentials (anything outside GCE), mount your local credentials:
+
+```bash
+docker run --rm \
+  -v /path/to/projects:/projects \
+  -v ~/.config/gcloud:/root/.config/gcloud:ro \
+  -e GOOGLE_CLOUD_PROJECT=your-project-id \
+  autosub run /projects/video.mkv --profile proseka/mmj
+```
+
+Non-GCP providers work without any GCP setup (translate step only):
+
+```bash
+docker run --rm \
+  -v /path/to/projects:/projects \
+  -e ANTHROPIC_API_KEY=your-key \
+  autosub translate --llm-provider anthropic --model claude-sonnet-4-6 \
+  --profile proseka/mmj /projects/original.ass
+```
+
+### Rebuild after changes
+
+```bash
+git pull && docker build -t autosub .
+```
+
+### docker compose
+
+`docker-compose.yml` wraps the same image with `build: .`, a `./projects` mount, and env-var pass-through. Copy `.env.example` to `.env`, fill in the values you need, then:
+
+```bash
+docker compose build
+docker compose run --rm autosub run /projects/video.mkv --profile proseka/mmj
+```
+
+Override the host project directory with `AUTOSUB_PROJECTS_DIR` (defaults to `./projects`).
+
+See `.env.example` for all configurable environment variables.
+
 ## Configuration
 
 Create a `.env` file in the repo root:
