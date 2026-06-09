@@ -30,7 +30,7 @@ autosub/
 │   ├── postprocess/           # Profile-driven editorial cleanup
 │   └── report/                # HTML review report generator
 profiles/                      # TOML profiles (examples/ tracked, local/ gitignored)
-prompts/                       # Prompt files (examples/ tracked, local/ gitignored)
+prompts/                       # Legacy prompt files (DEPRECATED — inline into profile TOML instead)
 tests/                         # pytest test suite
 ```
 
@@ -45,8 +45,11 @@ tests/                         # pytest test suite
 
 ## Key Concepts
 
-- **Profiles**: TOML files with `extends` inheritance. Searched: `profiles/local/` > `profiles/examples/` > `profiles/`
-- **Prompts**: Markdown/text files loaded by profiles. Searched: `prompts/local/` > `prompts/examples/` > `prompts/`
+- **Profiles**: TOML files with `extends` inheritance. Searched: `profiles/local/` > `profiles/examples/` > `profiles/`. A profile not found anywhere is a hard error (`FileNotFoundError`), not a silent warning.
+- **Prompts**: Inline TOML strings inside a profile's `[translate] prompt = ...`. A profile can use either:
+  - **A single string** (`prompt = """..."""`) — one fragment.
+  - **A list of strings** (`prompt = ["""...""", """..."""]`) — multiple fragments concatenated, in order. Useful for layering: e.g. one block for program identity, another for shared style rules, another for unit-specific context. Fragments inherit additively through `extends` — a child profile's fragments are appended to the parent's, never replacing them.
+  - **(Deprecated)** A `.md`/`.txt` file path (`prompt = "prompts/foo.md"`). Still works but emits a deprecation warning. The `prompts/` directory will be removed in a future release.
 - **Extensions**: `radio_discourse` (listener mail classification) and `corners` (program segment detection) run at format/postprocess time
 - **Speaker maps**: Per-project TOML files mapping diarization labels to character names/colors
 - **Config**: `config.toml` (gitignored) provides default CLI flags per stage
@@ -64,4 +67,4 @@ tests/                         # pytest test suite
 
 - Commit messages: imperative mood, lowercase, concise
 - Branch per feature - don't tangle unrelated features
-- Local/user-specific files go in gitignored dirs (`profiles/local/`, `prompts/local/`, `config.toml`)
+- Local/user-specific files go in gitignored dirs (`profiles/local/`, `config.toml`). `prompts/local/` exists for legacy file-based prompts only — new content should be inlined directly into the profile TOML.

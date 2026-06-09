@@ -200,9 +200,8 @@ Copy-Item .\config.toml.sample .\config.toml
 
 Then choose one of these workflows:
 
-- Use a tracked example profile as-is. Example profiles in `.\profiles\examples` and prompt files in `.\prompts\examples` are committed and ready to use directly.
+- Use a tracked example profile as-is. Example profiles in `.\profiles\examples` are committed and ready to use directly. Each profile is fully self-contained — prompt text lives inline in the TOML.
 - Make your own local profile by copying an example into `.\profiles\local\my_profile.toml` and editing it.
-- Only create a file in `.\prompts\local` when you want to override prompt text locally. You do not need to copy every example prompt up front.
 
 Example local profile setup:
 
@@ -210,9 +209,9 @@ Example local profile setup:
 Copy-Item .\profiles\examples\solo_seiyuu_radio.toml .\profiles\local\my_profile.toml
 ```
 
-If `my_profile.toml` contains `prompt = "prompts/solo_seiyuu_radio.md"`, autosub will automatically prefer `.\prompts\local\solo_seiyuu_radio.md` over the tracked example file if both exist.
+`.\config.toml` and `.\profiles\local\*.toml` are gitignored on purpose, so you do not need to recommit them whenever you add or tweak a profile.
 
-`.\config.toml`, `.\profiles\local\*.toml`, and `.\prompts\local\*` are gitignored on purpose, so you do not need to recommit them whenever you add or tweak a profile or prompt.
+> **Legacy `prompts/` directory**: older profiles referenced prompt content via `prompt = "prompts/foo.md"`. Those references still load but emit a deprecation warning — inline the content into the profile TOML using `prompt = """..."""` instead. The `prompts/` tree will be removed in a future release.
 
 ## Quick Start
 
@@ -418,16 +417,16 @@ For `autosub run`, the effective defaults are combined from the stage sections:
 
 If you need a run-only override such as `out_dir` or `extract_keyframes`, an optional `[run]` section is still supported, but the default template leaves it out on purpose.
 
-Keep reusable content in profiles and prompt files instead:
+Keep reusable content in profiles instead:
 
-- prompt text
+- prompt text (inline as TOML strings; see [Profile Keys](#profile-keys))
 - vocabulary lists
 - glossary entries
 - timing rules
 - replacements
 - extension settings
 
-Tracked example prompt fragments live in [`prompts/examples`](./prompts/examples). Local prompt overrides live in `.\prompts\local`, which is gitignored.
+Tracked example profiles live in [`profiles/examples`](./profiles/examples). Local profile overrides live in `.\profiles\local`, which is gitignored.
 
 ## Command Reference
 
@@ -658,7 +657,11 @@ split_framing_phrases = true
 label_roles = true
 
 [translate]
-prompt = "prompts/suzuhara_nozomi.md"
+prompt = """
+Speaker-specific guidance for Nozomi Suzuhara (鈴原希実):
+1. Persona: She has a softer, cozy, slightly reserved presence...
+2. Delivery shifts: Her gentle, intimate casual speech will suddenly shift...
+"""
 
 [translate.glossary]
 "鈴原希実" = "Suzuhara Nozomi"
@@ -675,7 +678,7 @@ enabled = true
 - `[format.replacements]`: Exact deterministic replacements applied before formatting and timing rules. If `[format.normalizer]` is omitted, autosub treats this as the default exact normalizer.
 - `[format.normalizer]`: Optional normalizer config. Set `engine = "exact"` to use a replacement map or `engine = "llm"` to let an LLM propose substring replacements from an approved term list.
 - `[format.extensions]`: Nested extension configuration for the formatting stage.
-- `[translate].prompt`: Either inline text or a path ending in `.md` or `.txt`. File contents are loaded into the translation prompt.
+- `[translate].prompt`: Inline prompt text. Accepts either a single string (`prompt = """..."""`) or a list of strings (`prompt = ["""...""", """..."""]`) — list entries are concatenated in order, useful for layering reusable fragments. Inherited prompts from `extends` are appended additively (parent fragments first, then child). A path ending in `.md`/`.txt` is also accepted for backward compatibility but emits a deprecation warning; inline the content instead.
 - `[translate.glossary]`: Exact translation overrides appended to the translation prompt.
 - `[postprocess.extensions]`: Nested extension configuration for the postprocessing stage.
 

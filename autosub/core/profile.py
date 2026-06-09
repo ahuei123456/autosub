@@ -207,14 +207,20 @@ def _load_prompt_fragments(
     for raw_part in raw_parts:
         prompt_value = raw_part.strip()
         if prompt_value.endswith(".md") or prompt_value.endswith(".txt"):
+            logger.warning(
+                f"DEPRECATED: profile {profile_name} references prompt file "
+                f"{prompt_value!r}. Inline the prompt content directly into the "
+                f"profile TOML instead (prompt = \"\"\"...\"\"\"). File references "
+                f"will be removed in a future release."
+            )
             prompt_file_path = _resolve_prompt_path(prompt_value)
-            if prompt_file_path is not None:
-                with open(prompt_file_path, "r", encoding="utf-8") as prompt_file:
-                    prompt_parts.append(prompt_file.read().strip())
-            else:
-                logger.warning(
-                    f"Prompt file {prompt_value} referenced by {profile_name} not found."
+            if prompt_file_path is None:
+                raise FileNotFoundError(
+                    f"Prompt file {prompt_value} referenced by {profile_name} "
+                    "not found in prompts/local, prompts/examples, or prompts/."
                 )
+            with open(prompt_file_path, "r", encoding="utf-8") as prompt_file:
+                prompt_parts.append(prompt_file.read().strip())
         else:
             prompt_parts.append(prompt_value)
     return prompt_parts
@@ -407,11 +413,10 @@ def _load_profile_sections(
 
     profile_path = _resolve_profile_path(profile_name)
     if profile_path is None:
-        logger.warning(
-            f"Profile {profile_name}.toml not found in profiles/local, "
-            "profiles/examples, or profiles/."
+        search_dirs = ", ".join(str(d) for d in _profile_search_dirs())
+        raise FileNotFoundError(
+            f"Profile {profile_name}.toml not found in {search_dirs}."
         )
-        return _empty_stage_profile()
 
     try:
         with open(profile_path, "rb") as handle:
