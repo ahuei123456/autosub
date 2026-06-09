@@ -310,6 +310,16 @@ def _transcribe_time_range(
             )
 
             if needs_chunking:
+                if num_speakers:
+                    logger.warning(
+                        "Diarization (--speakers) with Chirp 3 on audio longer than "
+                        "%d min: the audio is split into independent chunks that are "
+                        "diarized separately, so speaker labels are NOT consistent "
+                        "across chunk boundaries (label '0' in one chunk is unrelated "
+                        "to '0' in the next). Reconcile labels afterward with "
+                        "`assign-speakers`, or transcribe shorter --start/--end ranges.",
+                        audio.MAX_CHUNK_MINUTES,
+                    )
                 # Split into chunks for Chirp 3's word-timestamp limit
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     chunks = audio.split_audio(
