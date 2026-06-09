@@ -26,7 +26,10 @@ LOG_FORMAT = "%(asctime)s:%(levelname)s:%(name)s: %(message)s"
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
-PROFILE_LOAD_ERRORS = (ValueError, FileNotFoundError, tomllib.TOMLDecodeError)
+# The profile loader only raises FileNotFoundError (missing profile/prompt) or
+# TOMLDecodeError (unparseable). Catching bare ValueError too would mask
+# unrelated programming errors as a clean "profile load failed" exit.
+PROFILE_LOAD_ERRORS = (FileNotFoundError, tomllib.TOMLDecodeError)
 
 app = typer.Typer(help="AutoSub CLI for Japanese subtitle generation and translation")
 
@@ -336,7 +339,11 @@ def transcribe(
 
     final_vocab = []
     if profile:
-        profile_data = load_unified_profile(profile)
+        try:
+            profile_data = load_unified_profile(profile)
+        except PROFILE_LOAD_ERRORS as e:
+            logger.error(f"Error while loading transcribe profile: {e}")
+            raise typer.Exit(code=1)
         final_vocab.extend(profile_data.get("transcribe", {}).get("vocab", []))
     if vocab:
         final_vocab.extend(vocab)
@@ -592,7 +599,11 @@ def translate(
 
     final_prompt_parts = []
     if profile:
-        profile_data = load_unified_profile(profile)
+        try:
+            profile_data = load_unified_profile(profile)
+        except PROFILE_LOAD_ERRORS as e:
+            logger.error(f"Error while loading translate profile: {e}")
+            raise typer.Exit(code=1)
         translate_profile = profile_data.get("translate", {})
         final_prompt_parts.extend(translate_profile.get("prompt", []))
         glossary_text = _build_glossary_prompt(translate_profile.get("glossary", {}))
@@ -694,7 +705,11 @@ def postprocess(
 
     final_extensions = {}
     if profile:
-        profile_data = load_unified_profile(profile)
+        try:
+            profile_data = load_unified_profile(profile)
+        except PROFILE_LOAD_ERRORS as e:
+            logger.error(f"Error while loading postprocess profile: {e}")
+            raise typer.Exit(code=1)
         final_extensions = profile_data.get("postprocess", {}).get("extensions", {})
 
     try:
