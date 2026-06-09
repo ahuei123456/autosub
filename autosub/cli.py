@@ -26,7 +26,10 @@ LOG_FORMAT = "%(asctime)s:%(levelname)s:%(name)s: %(message)s"
 logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
-PROFILE_LOAD_ERRORS = (ValueError, FileNotFoundError, tomllib.TOMLDecodeError)
+# The profile loader only raises FileNotFoundError (missing profile/prompt) or
+# TOMLDecodeError (unparseable). Catching bare ValueError too would mask
+# unrelated programming errors as a clean "profile load failed" exit.
+PROFILE_LOAD_ERRORS = (FileNotFoundError, tomllib.TOMLDecodeError)
 
 app = typer.Typer(help="AutoSub CLI for Japanese subtitle generation and translation")
 

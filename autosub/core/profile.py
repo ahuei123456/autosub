@@ -416,8 +416,11 @@ def _load_profile_sections(
         with open(profile_path, "rb") as handle:
             data = tomllib.load(handle)
     except Exception as exc:
-        logger.error(f"Failed to parse TOML profile {profile_path}: {exc}")
-        return _empty_stage_profile()
+        # A resolved-but-unparseable profile is a hard error, mirroring the
+        # missing-file case above — don't silently fall back to an empty profile
+        # (that produces untranslated/misconfigured output with no signal).
+        logger.error(f"Failed to load TOML profile {profile_path}: {exc}")
+        raise
 
     combined = _empty_stage_profile()
     for base_profile in data.get("extends", []):
