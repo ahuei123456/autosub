@@ -493,6 +493,13 @@ def transcribe(
     5. Merges results and saves to disk
     """
     resolved_backend = _validate_transcription_backend(transcription_backend)
+    if num_speakers and resolved_backend == "chirp_2":
+        # The chirp_2 recognizer rejects diarization_config at the API with a
+        # cryptic 400; fail fast with a clear message instead.
+        raise ValueError(
+            "Speaker diarization (--speakers) is not supported by the chirp_2 "
+            "recognizer. Use --backend chirp_3 (or whisperx) for diarization."
+        )
     project_id = PROJECT_ID if resolved_backend in CHIRP_BACKENDS else None
     if resolved_backend == "whisperx" and vocabulary:
         logger.warning(

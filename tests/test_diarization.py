@@ -385,3 +385,18 @@ def test_many_to_one_speaker_mapping():
     assert all(l.speaker == "Date Sayuri" for l in lines)
 
 
+
+
+def test_chirp2_diarization_rejected():
+    """chirp_2 + --speakers must fail fast with a clear error (API rejects it)."""
+    import pytest
+    from pathlib import Path
+    from autosub.pipeline.transcribe.main import transcribe
+
+    with pytest.raises(ValueError, match="not supported by the chirp_2"):
+        transcribe(
+            Path("nonexistent.mkv"),
+            Path("out.json"),
+            num_speakers=2,
+            transcription_backend="chirp_2",
+        )
