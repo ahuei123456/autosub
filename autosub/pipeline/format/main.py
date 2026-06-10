@@ -51,7 +51,7 @@ def _apply_combined_extensions(
     from autosub.core.config import PROJECT_ID
     from autosub.core.errors import VertexError
     from autosub.extensions.combined_classifier import classify_combined
-    from autosub.extensions.corners.main import dedup_consecutive, detect_by_cues
+    from autosub.extensions.corners.main import dedup_sticky, detect_by_cues
     from autosub.extensions.radio_discourse.main import (
         _normalize_greetings,
         classify_role,
@@ -119,7 +119,7 @@ def _apply_combined_extensions(
     merged_corners: list[str | None] = []
     for llm_c, cue_c in zip(corners, cue_corners, strict=False):
         merged_corners.append(llm_c if llm_c is not None else cue_c)
-    merged_corners = dedup_consecutive(merged_corners)
+    merged_corners = dedup_sticky(merged_corners)
 
     label_roles = radio_config.get("label_roles", True)
     result: list[SubtitleLine] = []
