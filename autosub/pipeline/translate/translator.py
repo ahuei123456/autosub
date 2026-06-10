@@ -144,7 +144,7 @@ class VertexTranslator(BaseTranslator, BaseStructuredLLM):
                 speaker=cue.speaker,
                 role=cue.role,
                 corner=cue.corner,
-            ).model_dump()
+            ).model_dump(exclude_none=True)
             for i, (cue, text) in enumerate(zip(cues, texts, strict=True))
         ]
         return self._translate_payload(payload, system_instruction, len(cues))

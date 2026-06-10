@@ -259,6 +259,12 @@ def _apply_min_duration_padding(
                     )
                     seg.text = f"{seg.text}{separator}{next_seg.text}".strip()
                     seg.end_ms = next_seg.end_ms
+                    if separator and seg.words:
+                        # Keep concatenated word text aligned with seg.text so
+                        # char-position walks in find_split_time stay exact.
+                        seg.words[-1] = seg.words[-1].model_copy(
+                            update={"word": seg.words[-1].word + separator}
+                        )
                     seg.words.extend(next_seg.words)
                     skip_next = True
             else:

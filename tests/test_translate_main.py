@@ -478,6 +478,62 @@ def test_translate_subtitles_persists_debug_chunk_boundaries(tmp_path, monkeypat
     )
 
 
+def test_translate_subtitles_chunk_boundaries_account_for_empty_cues(
+    tmp_path, monkeypatch
+):
+    """Stored boundaries index the full cue list, not just translatable cues."""
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    document = SubtitleDocument(
+        stage="formatted",
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="first",
+            ),
+            SubtitleCue(
+                id="cue-00002",
+                start_time=1,
+                end_time=2,
+                source_text="",
+            ),
+            SubtitleCue(
+                id="cue-00003",
+                start_time=2,
+                end_time=3,
+                source_text="second",
+            ),
+        ],
+    )
+    input_json_path.write_text(document.model_dump_json(indent=2), encoding="utf-8")
+
+    class FakeVertexTranslator:
+        def __init__(self, **kwargs):
+            pass
+
+        def translate_cues(self, cues: list[SubtitleCue]) -> list[str]:
+            return [f"translated:{cue.source_text}" for cue in cues]
+
+    monkeypatch.setattr(translate_main_module, "PROJECT_ID", "test-project")
+    monkeypatch.setattr(translator_module, "VertexTranslator", FakeVertexTranslator)
+
+    translate_subtitles(
+        input_json_path,
+        output_json_path,
+        engine="vertex",
+        bilingual=False,
+        chunk_size=1,
+        debug=True,
+    )
+
+    translated = SubtitleDocument.model_validate_json(
+        output_json_path.read_text(encoding="utf-8")
+    )
+    assert translated.chunk_boundaries == [2]
+
+
 def test_translate_subtitles_preserves_source_words(tmp_path, monkeypatch):
     input_json_path = tmp_path / "formatted.json"
     output_json_path = tmp_path / "translated.json"
@@ -519,7 +575,7 @@ def test_translate_subtitles_preserves_source_words(tmp_path, monkeypatch):
     assert [word.word for word in translated.cues[0].words] == ["こん", "にちは"]
 
 
-def test_extract_corner_boundaries_from_cues_skips_empty_source_text():
+def test_extract_corner_boundaries_from_cues_carries_corner_past_empty_cue():
     document = SubtitleDocument(
         stage="formatted",
         cues=[
@@ -528,7 +584,7 @@ def test_extract_corner_boundaries_from_cues_skips_empty_source_text():
                 start_time=0,
                 end_time=1,
                 source_text="",
-                corner="ignored",
+                corner="carried",
             ),
             SubtitleCue(
                 id="cue-00002",
@@ -546,10 +602,10 @@ def test_extract_corner_boundaries_from_cues_skips_empty_source_text():
         ],
     )
 
-    assert _extract_corner_boundaries_from_cues(document) == [1]
+    assert _extract_corner_boundaries_from_cues(document) == [0, 1]
 
 
-def test_extract_corner_boundaries_warns_for_empty_corner_cue(caplog):
+def test_extract_corner_boundaries_warns_for_trailing_empty_corner_cue(caplog):
     document = SubtitleDocument(
         stage="formatted",
         cues=[
@@ -566,7 +622,7 @@ def test_extract_corner_boundaries_warns_for_empty_corner_cue(caplog):
     with caplog.at_level("WARNING"):
         assert _extract_corner_boundaries_from_cues(document) == []
 
-    assert "Ignoring corner boundary on empty cue cue-00001" in caplog.text
+    assert "Dropping corner boundary on empty cue cue-00001" in caplog.text
 
 
 def test_subtitle_document_json_round_trip():

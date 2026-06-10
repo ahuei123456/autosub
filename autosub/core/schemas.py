@@ -81,5 +81,8 @@ class SubtitleDocument(BaseModel):
     schema_version: Literal[1] = 1
     stage: Literal["formatted", "translated", "postprocessed"]
     metadata: SubtitleMetadata = Field(default_factory=SubtitleMetadata)
-    chunk_boundaries: List[int] = Field(default_factory=list)
+    chunk_boundaries: List[int] = Field(
+        default_factory=list,
+        description="Indices into cues marking the first cue of each translation chunk after the first.",
+    )
     cues: List[SubtitleCue] = Field(default_factory=list)

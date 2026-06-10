@@ -37,9 +37,11 @@ tests/                         # pytest test suite
 ## Pipeline
 
 1. **Transcribe** - Extract audio, send to STT backend, produce `transcript.json`
-2. **Format** - Chunk words into subtitle lines, apply timing/extensions, produce `original.ass`
-3. **Translate** - LLM translation of subtitles, produce `translated.ass`
-4. **Postprocess** - Profile-driven cleanup of translated output
+2. **Format** - Chunk words into subtitle lines, apply timing/extensions, produce `formatted.json` + rendered `original.ass`
+3. **Translate** - LLM translation of cues, produce `translated.json` + rendered `translated.ass`
+4. **Postprocess** - Profile-driven cleanup, produce `postprocessed.json` + final `.ass`
+
+Stages exchange `SubtitleDocument` JSON (`autosub/core/schemas.py`); `.ass` files are rendered byproducts, not inputs to later stages. Each document carries a `stage` marker that the next stage validates.
 
 `autosub run` executes all four stages. Each stage can also run independently.
 

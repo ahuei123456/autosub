@@ -93,7 +93,9 @@ def test_min_duration_merge_concatenates_words_and_offsets_replacement_spans():
 
     assert len(result) == 1
     assert result[0].text == "L1 Line Two"
-    assert [word.word for word in result[0].words] == ["L1", "Line", "Two"]
+    # The merge separator is folded into the preceding word so char-position
+    # walks over words stay aligned with the merged text.
+    assert [word.word for word in result[0].words] == ["L1 ", "Line", "Two"]
     assert result[0].replacement_spans == [
         ReplacementSpan(orig_start=0, orig_end=1, replaced_start=0, replaced_end=2),
         ReplacementSpan(orig_start=2, orig_end=4, replaced_start=3, replaced_end=7),

@@ -184,7 +184,14 @@ def translate_subtitles(
     logger.info("Applying translations to subtitle document...")
     translated_document = document.model_copy(deep=True)
     translated_document.stage = "translated"
-    translated_document.chunk_boundaries = sorted(splits) if debug else []
+    # splits index into cues_to_translate (empty cues filtered out); the
+    # document stores boundaries as indices into the full cue list.
+    cue_index_by_id = {cue.id: index for index, cue in enumerate(document.cues)}
+    translated_document.chunk_boundaries = (
+        sorted(cue_index_by_id[cues_to_translate[split].id] for split in splits)
+        if debug
+        else []
+    )
     cue_by_id = {cue.id: cue for cue in translated_document.cues}
     for source_cue, translated_text in zip(
         cues_to_translate, translated_texts, strict=True
@@ -212,18 +219,24 @@ def translate_subtitles(
 def _extract_corner_boundaries_from_cues(document: SubtitleDocument) -> list[int]:
     boundaries: list[int] = []
     dialogue_idx = 0
+    # A corner on an empty cue attaches to the next translatable cue, matching
+    # the old behavior where corner Comments preceded their dialogue event.
+    pending_corner_cue_id: str | None = None
     for cue in document.cues:
         source_text = cue.normalized_source_text or cue.source_text
         if not source_text.strip():
             if cue.corner:
-                logger.warning(
-                    "Ignoring corner boundary on empty cue %s.",
-                    cue.id,
-                )
+                pending_corner_cue_id = cue.id
             continue
-        if cue.corner:
+        if cue.corner or pending_corner_cue_id is not None:
             boundaries.append(dialogue_idx)
+            pending_corner_cue_id = None
         dialogue_idx += 1
+    if pending_corner_cue_id is not None:
+        logger.warning(
+            "Dropping corner boundary on empty cue %s: no later dialogue cue to attach it to.",
+            pending_corner_cue_id,
+        )
     return boundaries
 
 

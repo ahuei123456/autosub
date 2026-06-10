@@ -7,9 +7,11 @@ Automatic Japanese subtitle generation and translation pipeline for speech-heavy
 `autosub` currently runs a four-stage CLI pipeline:
 
 1. **Transcribe**: Extract audio, send it to the selected transcription backend (`chirp_2` by default, `chirp_3` for Chirp 3, or local `whisperx`), and write a word-timed `transcript.json`.
-2. **Format**: Chunk words into subtitle lines, optionally apply discourse-aware radio segmentation, apply timing and optional keyframe snapping, and write `original.ass`.
-3. **Translate**: Translate subtitle events with either Vertex AI (`gemini-3-flash-preview`) or Cloud Translation v3, then write `translated.ass`.
-4. **Postprocess**: Apply profile-driven editorial cleanup to the translated `.ass` file. The built-in `run` command includes this step automatically.
+2. **Format**: Chunk words into subtitle lines, optionally apply discourse-aware radio segmentation, apply timing and optional keyframe snapping, and write `formatted.json` plus a rendered `original.ass`.
+3. **Translate**: Translate subtitle cues with either Vertex AI (`gemini-3-flash-preview`) or Cloud Translation v3, then write `translated.json` plus a rendered `translated.ass`.
+4. **Postprocess**: Apply profile-driven editorial cleanup to the translated JSON document and write `postprocessed.json` plus the final `.ass`. The built-in `run` command includes this step automatically.
+
+The stages exchange structured JSON documents; `.ass` files are rendered byproducts at each stage, not inputs to later stages.
 
 ```mermaid
 graph TD
@@ -17,7 +19,7 @@ graph TD
     B --> C[Format<br/>Chunking + Timing + Optional Keyframe Snapping]
     C --> D[Translate<br/>Vertex Gemini 3 Flash or Cloud Translation v3]
     D --> E[Postprocess<br/>Profile Extensions]
-    E --> F[Final translated.ass]
+    E --> F[Final .ass + postprocessed.json]
 ```
 
 ## Current Capabilities
@@ -152,14 +154,18 @@ uv run autosub run .\video.mp4 --profile suzuhara_nozomi --bilingual
 By default, `run` writes these files next to the input media, named after the video stem:
 
 - `<stem>_transcript.json`
+- `<stem>_formatted.json`
 - `<stem>_original.ass`
 - `<stem>_original.normalizer.llm_trace.jsonl` when the format normalizer uses `engine = "llm"`
 - `<stem>_original.normalizer.edit_audit.tsv` when the format normalizer uses `engine = "llm"`
 - `<stem>_original.radio_discourse.llm_trace.jsonl` when the `radio_discourse` extension uses an LLM-backed engine
 - `<stem>_original.corners.llm_trace.jsonl` when the `corners` extension uses an LLM-backed engine
 - `<stem>_original.combined.llm_trace.jsonl` when `radio_discourse` and `corners` run through the combined LLM path
+- `<stem>_translated.json`
 - `<stem>_translated.ass`
 - `<stem>_translated.llm_trace.jsonl` when translation uses the Vertex LLM engine
+- `<stem>_postprocessed.json`
+- `<stem>_final.ass`
 
 If keyframe extraction is enabled and succeeds, it also writes `<stem>_keyframes.log`.
 If `--save-log` is enabled, it writes `<stem>_autosub.log`.
@@ -216,8 +222,8 @@ uv run autosub format .\transcript.json `
 Translate with Anthropic:
 
 ```powershell
-uv run autosub translate .\original.ass `
-  --out .\translated.ass `
+uv run autosub translate .\formatted.json `
+  --out .\translated.json `
   --profile suzuhara_nozomi `
   --model claude-haiku-4-5 `
   --llm-reasoning-effort low `
@@ -227,8 +233,8 @@ uv run autosub translate .\original.ass `
 Translate with Anthropic Sonnet 4.6:
 
 ```powershell
-uv run autosub translate .\original.ass `
-  --out .\translated.ass `
+uv run autosub translate .\formatted.json `
+  --out .\translated.json `
   --profile suzuhara_nozomi `
   --model claude-sonnet-4-6 `
   --llm-reasoning-effort low `
@@ -239,8 +245,8 @@ uv run autosub translate .\original.ass `
 Translate with OpenAI:
 
 ```powershell
-uv run autosub translate .\original.ass `
-  --out .\translated.ass `
+uv run autosub translate .\formatted.json `
+  --out .\translated.json `
   --profile suzuhara_nozomi `
   --model gpt-5-mini `
   --llm-reasoning-effort low `
@@ -250,8 +256,8 @@ uv run autosub translate .\original.ass `
 Translate with OpenRouter explicitly:
 
 ```powershell
-uv run autosub translate .\original.ass `
-  --out .\translated.ass `
+uv run autosub translate .\formatted.json `
+  --out .\translated.json `
   --profile suzuhara_nozomi `
   --llm-provider openrouter `
   --model anthropic/claude-sonnet-4-6 `
@@ -262,8 +268,8 @@ uv run autosub translate .\original.ass `
 Translate with an OpenRouter-native model ID:
 
 ```powershell
-uv run autosub translate .\original.ass `
-  --out .\translated.ass `
+uv run autosub translate .\formatted.json `
+  --out .\translated.json `
   --llm-provider openrouter `
   --model qwen/qwen3.6-plus:free
 ```
@@ -288,7 +294,7 @@ Current vendor pricing and model pages can change. Check the official docs befor
 Postprocess a translated file explicitly:
 
 ```powershell
-uv run autosub postprocess .\translated.ass `
+uv run autosub postprocess .\translated.json `
   --profile suzuhara_nozomi `
   --bilingual
 ```
@@ -382,6 +388,7 @@ Behavior notes:
 ### `autosub format`
 
 - `--out`: Output `.ass` path. Default: `original.ass` in the transcript directory
+- `--json-out`: Output path for the formatted JSON passed to the translate stage. Default: `formatted.json` next to the `.ass` output
 - `--keyframes`: Path to an Aegisub keyframe log
 - `--fps`: Required when `--keyframes` is used
 - `--profile`: Loads `[format]`, including timing keys, replacements, and extensions
@@ -397,7 +404,10 @@ Behavior notes:
 
 ### `autosub translate`
 
-- `--out`: Output `.ass` path. Default: `translated.ass`
+Takes the formatted JSON from `autosub format` as input (not the `.ass` file).
+
+- `--out`: Output translated JSON path. Default: `translated.json` next to the input
+- `--ass-out`: Output path for the rendered translated `.ass` byproduct. Default: the JSON output path with an `.ass` suffix
 - `--engine`, `-e`: `vertex` or `cloud-v3`
 - `--model`: Preferred LLM selector for the `vertex` engine. Infers provider automatically for Gemini, Claude, and OpenAI model names
 - `--llm-provider`: `google-vertex`, `anthropic-vertex`, `anthropic`, `openai`, or `openrouter` for the `vertex` engine
@@ -412,7 +422,7 @@ Behavior notes:
 - `--llm-reasoning-dynamic` / `--no-llm-reasoning-dynamic`: Request dynamic reasoning budget on supported providers and model families
 - `--bilingual` / `--replace`: Stack Japanese above the translation, or replace text entirely
 - `--chunk-size`: Number of subtitle lines per translation chunk. Use `0` to disable chunking. Default: `0`
-- `--mark-chunks` / `--no-mark-chunks`: Insert ASS Comment events at artificial chunk boundaries so reviewers can spot lines where the LLM lost context. Only flags fixed-size and sub-split boundaries; corner-detected boundaries are excluded.
+- `--mark-chunks` / `--no-mark-chunks`: Record artificial chunk boundaries in the translated JSON and render them as ASS Comment events so reviewers can spot lines where the LLM lost context. Boundaries carry through postprocess into the final `.ass`. Only flags fixed-size and sub-split boundaries; corner-detected boundaries are excluded.
 - `--save-log` / `--no-save-log`: Write full log output (at DEBUG level) to a `.log` file next to the output file.
 
 Behavior notes:
@@ -468,14 +478,17 @@ OpenRouter notes:
 
 ### `autosub postprocess`
 
-- `--out`: Output `.ass` path. Default: overwrite the input file
+Takes the translated JSON from `autosub translate` as input (not the `.ass` file).
+
+- `--out`: Output postprocessed JSON path. Default: `postprocessed.json` next to the input
+- `--ass-out`: Output path for the rendered final `.ass`. Default: the JSON output path with an `.ass` suffix
 - `--profile`: Loads `[postprocess.extensions]`
-- `--bilingual` / `--replace`: Tells postprocess whether it is operating on stacked bilingual text or translated-only text
+- `--bilingual` / `--replace`: Render the final `.ass` with stacked bilingual text or translated-only text
 
 Behavior notes:
 
-- Postprocessing only changes files when an enabled extension actually makes edits.
-- The built-in `run` command postprocesses `translated.ass` in place.
+- Postprocess always writes the JSON document and the final `.ass`, even when no extension makes edits.
+- The built-in `run` command writes `<stem>_postprocessed.json` and the final `<stem>_final.ass`.
 
 ### `autosub run`
 

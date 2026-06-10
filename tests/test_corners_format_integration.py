@@ -116,14 +116,14 @@ def test_extract_boundaries_no_corners():
     assert boundaries == []
 
 
-def test_extract_boundaries_skips_empty_source_text():
+def test_extract_boundaries_carries_corner_on_empty_cue_to_next_dialogue():
     document = SubtitleDocument(
         stage="formatted",
-        cues=[_cue("line 0", 0), _cue("", 1, corner="Ignored"), _cue("line 1", 2)],
+        cues=[_cue("line 0", 0), _cue("", 1, corner="Carried"), _cue("line 1", 2)],
     )
 
     boundaries = _extract_corner_boundaries_from_cues(document)
-    assert boundaries == []
+    assert boundaries == [1]
 
 
 def test_extract_boundaries_corner_at_start():
