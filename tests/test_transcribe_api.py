@@ -75,7 +75,7 @@ def test_transcribe_uri_wraps_operation_failures_with_context(monkeypatch):
 
     try:
         transcribe_api.transcribe_uri(gcs_uri, "project-id")
-        assert False, "Expected Chirp 2 batch failures to be wrapped."
+        assert False, "Expected chirp_2 batch failures to be wrapped."
     except RuntimeError as exc:
         assert gcs_uri in str(exc)
         assert "backend boom" in str(exc)

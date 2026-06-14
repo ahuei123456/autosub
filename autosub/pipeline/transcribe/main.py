@@ -311,6 +311,16 @@ def _transcribe_time_range(
             )
 
             if needs_chunking:
+                if num_speakers:
+                    logger.warning(
+                        "Diarization (--speakers) with Chirp 3 on audio longer than "
+                        "%d min: the audio is split into independent chunks that are "
+                        "diarized separately, so speaker labels are NOT consistent "
+                        "across chunk boundaries (label '0' in one chunk is unrelated "
+                        "to '0' in the next). Reconcile labels afterward with "
+                        "`assign-speakers`, or transcribe shorter --start/--end ranges.",
+                        audio.MAX_CHUNK_MINUTES,
+                    )
                 # Split into chunks for Chirp 3's word-timestamp limit
                 with tempfile.TemporaryDirectory() as tmp_dir:
                     chunks = audio.split_audio(
@@ -483,6 +493,13 @@ def transcribe(
     5. Merges results and saves to disk
     """
     resolved_backend = _validate_transcription_backend(transcription_backend)
+    if num_speakers and resolved_backend == "chirp_2":
+        # The chirp_2 recognizer rejects diarization_config at the API with a
+        # cryptic 400; fail fast with a clear message instead.
+        raise ValueError(
+            "Speaker diarization (--speakers) is not supported by the chirp_2 "
+            "recognizer. Use --backend chirp_3 (or whisperx) for diarization."
+        )
     project_id = PROJECT_ID if resolved_backend in CHIRP_BACKENDS else None
     if resolved_backend == "whisperx" and vocabulary:
         logger.warning(

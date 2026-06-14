@@ -3,18 +3,30 @@ from typing import List
 import pyass
 
 from autosub.core.schemas import SubtitleLine
+from autosub.core.speaker_map import hex_to_pyass_color, remap_speaker_labels
 
 
-def generate_ass_file(lines: List[SubtitleLine], output_path: Path):
+def generate_ass_file(
+    lines: List[SubtitleLine],
+    output_path: Path,
+    speaker_map: dict[str, dict] | None = None,
+):
     """
     Converts a list of SubtitleLine objects into a pyass Script and saves it to disk.
     Automatically generates unique styles per speaker.
+
+    If speaker_map is provided, uses character names and specified colors
+    instead of raw API labels with auto-colors.
     """
+    # Remap raw speaker labels to character names before building styles
+    if speaker_map:
+        remap_speaker_labels(lines, speaker_map)
+
     # 1. Identify unique speakers and generate styles
     unique_speakers = {line.speaker if line.speaker else "Default" for line in lines}
 
     # Pre-defined array of subtle color tints for up to a few speakers
-    speaker_colors = [
+    auto_colors = [
         pyass.Color(r=255, g=255, b=255, a=0),  # White
         pyass.Color(r=255, g=255, b=200, a=0),  # Light Yellow
         pyass.Color(r=200, g=255, b=255, a=0),  # Light Cyan
@@ -22,12 +34,19 @@ def generate_ass_file(lines: List[SubtitleLine], output_path: Path):
         pyass.Color(r=200, g=255, b=200, a=0),  # Light Green
     ]
 
+    # Build a color lookup from speaker map (name → color)
+    map_colors: dict[str, pyass.Color] = {}
+    if speaker_map:
+        for entry in speaker_map.values():
+            if entry.get("color"):
+                map_colors[entry["name"]] = hex_to_pyass_color(entry["color"])
+
     styles = []
     speakerOriginToStyleMap = {}
 
     for i, speaker_name in enumerate(sorted(unique_speakers)):
-        c = speaker_colors[i % len(speaker_colors)]
         style_name = speaker_name if speaker_name else "Default"
+        c = map_colors.get(style_name, auto_colors[i % len(auto_colors)])
 
         # Build style
         st = pyass.Style(

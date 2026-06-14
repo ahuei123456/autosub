@@ -119,6 +119,12 @@ def transcribe_uri(
         enable_word_time_offsets=True,
         enable_automatic_punctuation=True,
     )
+    if num_speakers is not None and num_speakers > 0:
+        features.diarization_config = cloud_speech.SpeakerDiarizationConfig(
+            min_speaker_count=num_speakers,
+            max_speaker_count=num_speakers,
+        )
+        logger.info(f"Speaker diarization enabled with {num_speakers} speaker(s)")
 
     config = speech_v2.RecognitionConfig(
         auto_decoding_config=speech_v2.AutoDetectDecodingConfig(),
@@ -185,6 +191,12 @@ def transcribe_local_file(
         enable_word_time_offsets=True,
         enable_automatic_punctuation=True,
     )
+    if num_speakers is not None and num_speakers > 0:
+        features.diarization_config = cloud_speech.SpeakerDiarizationConfig(
+            min_speaker_count=num_speakers,
+            max_speaker_count=num_speakers,
+        )
+        logger.info(f"Speaker diarization enabled with {num_speakers} speaker(s)")
 
     config = speech_v2.RecognitionConfig(
         auto_decoding_config=speech_v2.AutoDetectDecodingConfig(),

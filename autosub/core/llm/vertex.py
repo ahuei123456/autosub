@@ -26,6 +26,8 @@ class BaseVertexLLM:
         model: str,
         location: str = "global",
         temperature: float = 0.1,
+        thinking_level: str | None = "MEDIUM",
+        include_thoughts: bool = True,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -33,6 +35,10 @@ class BaseVertexLLM:
         self.model = model
         self.location = location
         self.temperature = temperature
+        # thinking_level=None disables thinking entirely (e.g. for cheap
+        # classification calls that don't need it).
+        self.thinking_level = thinking_level
+        self.include_thoughts = include_thoughts
 
     def _get_client(self) -> genai.Client:
         return genai.Client(
@@ -50,17 +56,25 @@ class BaseVertexLLM:
         operation_name: str,
     ) -> tuple[Any, VertexResponseDiagnostics]:
         client = self._get_client()
+        logger.debug("%s system instruction:\n%s", operation_name, system_instruction)
+        logger.debug("%s input:\n%s", operation_name, contents)
         t0 = time.monotonic()
+        config_kwargs: dict[str, Any] = dict(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            response_schema=response_schema,
+            temperature=self.temperature,
+        )
+        if self.thinking_level is not None:
+            config_kwargs["thinking_config"] = types.ThinkingConfig(
+                thinking_level=self.thinking_level,
+                include_thoughts=self.include_thoughts,
+            )
         try:
             response = client.models.generate_content(
                 model=self.model,
                 contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    response_mime_type="application/json",
-                    response_schema=response_schema,
-                    temperature=self.temperature,
-                ),
+                config=types.GenerateContentConfig(**config_kwargs),
             )
         except Exception as exc:
             elapsed = time.monotonic() - t0
@@ -78,6 +92,29 @@ class BaseVertexLLM:
 
         diagnostics = self._build_response_diagnostics(response)
         logger.debug("%s response diagnostics: %s", operation_name, diagnostics)
+
+        # Log token usage and thinking output
+        usage = response.usage_metadata
+        if usage:
+            logger.info(
+                "%s tokens: prompt=%s, candidates=%s, thoughts=%s, total=%s",
+                operation_name,
+                usage.prompt_token_count,
+                usage.candidates_token_count,
+                usage.thoughts_token_count,
+                usage.total_token_count,
+            )
+        for candidate in response.candidates or []:
+            if not candidate.content or not candidate.content.parts:
+                continue
+            for part in candidate.content.parts:
+                if hasattr(part, "thought") and part.thought and part.text:
+                    logger.debug(
+                        "%s thinking:\n%s", operation_name, part.text[:2000]
+                    )
+
+        if response.text:
+            logger.debug("%s raw output:\n%s", operation_name, response.text)
 
         # Warn when finish_reason is not STOP (e.g. MAX_TOKENS, OTHER)
         non_stop = [r for r in diagnostics.candidate_finish_reasons if r != "STOP"]
