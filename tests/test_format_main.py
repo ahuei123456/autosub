@@ -3,6 +3,8 @@ import json
 import pyass
 import autosub.extensions.radio_discourse.main as radio_discourse_main
 
+from autosub.core.schemas import SubtitleCue, SubtitleDocument
+from autosub.pipeline.format.generator import render_ass_document
 from autosub.pipeline.format.main import format_subtitles
 
 
@@ -49,6 +51,81 @@ def test_format_subtitles_does_not_insert_ass_line_breaks(tmp_path):
     assert r"\N" not in ass_text
 
 
+def test_format_subtitles_preserves_words_in_formatted_json(tmp_path):
+    transcript_path = tmp_path / "transcript.json"
+    output_path = tmp_path / "original.ass"
+    output_json_path = tmp_path / "formatted.json"
+
+    words = [
+        {"word": "おすすめ", "start_time": 0.0, "end_time": 0.6},
+        {"word": "です。", "start_time": 0.6, "end_time": 1.0},
+    ]
+    transcript_path.write_text(
+        json.dumps({"words": words}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    format_subtitles(transcript_path, output_path, output_json_path=output_json_path)
+
+    document = SubtitleDocument.model_validate_json(
+        output_json_path.read_text(encoding="utf-8")
+    )
+    assert document.stage == "formatted"
+    assert document.cues[0].id == "cue-00000001"
+    assert [word.word for word in document.cues[0].words] == ["おすすめ", "です。"]
+
+
+def test_render_bilingual_ass_uses_single_backslash_override_tags(tmp_path):
+    output_path = tmp_path / "translated.ass"
+    document = SubtitleDocument(
+        stage="translated",
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="こんにちは",
+                translated_text="Hello.",
+            )
+        ],
+    )
+
+    render_ass_document(document, output_path, mode="bilingual")
+
+    ass_text = output_path.read_text(encoding="utf-8")
+    assert r"{\fs24\a6}こんにちは{\N}{\fs48\a2}Hello." in ass_text
+    assert r"{\\fs24\\a6}" not in ass_text
+
+
+def test_render_ass_document_uses_document_chunk_boundaries(tmp_path):
+    output_path = tmp_path / "translated.ass"
+    document = SubtitleDocument(
+        stage="translated",
+        chunk_boundaries=[1],
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0,
+                end_time=1,
+                source_text="a",
+                translated_text="A",
+            ),
+            SubtitleCue(
+                id="cue-00002",
+                start_time=1,
+                end_time=2,
+                source_text="b",
+                translated_text="B",
+            ),
+        ],
+    )
+
+    render_ass_document(document, output_path, mode="translated")
+
+    ass_text = output_path.read_text(encoding="utf-8")
+    assert "[autosub] Chunk boundary - review translation around this line" in ass_text
+
+
 def test_format_subtitles_applies_radio_discourse_extension_and_preserves_role(
     tmp_path,
 ):
@@ -82,6 +159,44 @@ def test_format_subtitles_applies_radio_discourse_extension_and_preserves_role(
     assert dialogue_events[0].name == "listener_mail"
     assert dialogue_events[1].text == "といただきました。"
     assert dialogue_events[1].name == "host_meta"
+
+
+def test_format_subtitles_radio_discourse_and_corners_preserve_words(tmp_path):
+    transcript_path = tmp_path / "transcript.json"
+    output_path = tmp_path / "original.ass"
+    output_json_path = tmp_path / "formatted.json"
+
+    words = [
+        {"word": "おすすめ", "start_time": 0.0, "end_time": 0.6},
+        {"word": "です", "start_time": 0.6, "end_time": 1.0},
+        {"word": "といただきました。", "start_time": 1.0, "end_time": 2.0},
+    ]
+    transcript_path.write_text(
+        json.dumps({"words": words}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    format_subtitles(
+        transcript_path,
+        output_path,
+        output_json_path=output_json_path,
+        extensions_config={
+            "radio_discourse": {"enabled": True},
+            "corners": {
+                "enabled": True,
+                "engine": "cues",
+                "segments": [{"name": "Mail", "cues": ["おすすめ"]}],
+            },
+        },
+    )
+
+    document = SubtitleDocument.model_validate_json(
+        output_json_path.read_text(encoding="utf-8")
+    )
+    assert [cue.role for cue in document.cues] == ["listener_mail", "host_meta"]
+    assert document.cues[0].corner == "Mail"
+    assert [word.word for word in document.cues[0].words] == ["おすすめ", "です"]
+    assert [word.word for word in document.cues[1].words] == ["といただきました。"]
 
 
 def test_format_subtitles_sets_radio_discourse_trace_path(tmp_path, monkeypatch):

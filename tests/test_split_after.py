@@ -47,6 +47,10 @@ NONBANWA_VERBATIM_WORDS = [
     TranscribedWord(word="農市", start_time=712.0, end_time=712.32),
 ]
 
+DOUBLE_NONBANWA_REPLACEMENT_SPAN = ReplacementSpan(
+    orig_start=6, orig_end=14, replaced_start=6, replaced_end=16
+)
+
 
 # ---------------------------------------------------------------------------
 # apply_replacements_with_spans tests
@@ -251,6 +255,38 @@ def test_apply_split_after_attaches_trailing_punctuation_to_first_subline():
     assert result[0].text == "のんばんは。"
     assert result[1].text == "のんばんは！"
     assert result[2].text == "また明日"
+
+
+def test_apply_split_after_merged_double_greeting_is_not_zero_duration():
+    line = SubtitleLine(
+        text="のんちゃん、のんばんはのんばんは突然です",
+        start_time=662.88,
+        end_time=665.4,
+        words=[
+            TranscribedWord(word="のんちゃん、", start_time=662.88, end_time=663.36),
+            TranscribedWord(
+                word="のんばんはのんばんは", start_time=663.36, end_time=664.72
+            ),
+            TranscribedWord(word="突然です", start_time=664.92, end_time=665.4),
+        ],
+        replacement_spans=[DOUBLE_NONBANWA_REPLACEMENT_SPAN],
+    )
+
+    result = apply_split_after(
+        [line],
+        ["のんばんは"],
+        ensure_terminal_punctuation=True,
+    )
+
+    assert [item.text for item in result] == [
+        "のんちゃん、のんばんは。",
+        "のんばんは。",
+        "突然です",
+    ]
+    assert result[0].end_time == pytest.approx(664.04)
+    assert result[1].start_time == pytest.approx(664.04)
+    assert result[1].end_time == pytest.approx(664.72)
+    assert all(item.end_time > item.start_time for item in result)
 
 
 def test_apply_split_after_can_append_terminal_punctuation_when_enabled():

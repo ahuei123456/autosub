@@ -1,4 +1,4 @@
-from autosub.core.schemas import SubtitleLine
+from autosub.core.schemas import ReplacementSpan, SubtitleLine, TranscribedWord
 from autosub.pipeline.format.timing import (
     apply_timing_rules,
     _apply_min_duration_padding,
@@ -15,6 +15,27 @@ def test_min_duration_basic_padding():
     assert len(result) == 1
     assert result[0].start_time == 0.1
     assert result[0].end_time == 0.6
+
+
+def test_min_duration_padding_preserves_words_and_replacement_spans():
+    words = [TranscribedWord(word="Short", start_time=0.2, end_time=0.5)]
+    spans = [
+        ReplacementSpan(orig_start=0, orig_end=2, replaced_start=0, replaced_end=5)
+    ]
+    lines = [
+        SubtitleLine(
+            text="Short",
+            start_time=0.2,
+            end_time=0.5,
+            words=words,
+            replacement_spans=spans,
+        )
+    ]
+
+    result = apply_timing_rules(lines, min_duration_ms=500)
+
+    assert [word.word for word in result[0].words] == ["Short"]
+    assert result[0].replacement_spans == spans
 
 
 def test_min_duration_collision_and_merge():
@@ -39,6 +60,48 @@ def test_min_duration_collision_and_merge():
     # so the final should be 0.0 to 0.8! Let's check this via pytest
 
 
+def test_min_duration_merge_concatenates_words_and_offsets_replacement_spans():
+    lines = [
+        SubtitleLine(
+            text="L1",
+            start_time=0.1,
+            end_time=0.3,
+            words=[TranscribedWord(word="L1", start_time=0.1, end_time=0.3)],
+            replacement_spans=[
+                ReplacementSpan(
+                    orig_start=0, orig_end=1, replaced_start=0, replaced_end=2
+                )
+            ],
+        ),
+        SubtitleLine(
+            text="Line Two",
+            start_time=0.3,
+            end_time=0.5,
+            words=[
+                TranscribedWord(word="Line", start_time=0.3, end_time=0.4),
+                TranscribedWord(word="Two", start_time=0.4, end_time=0.5),
+            ],
+            replacement_spans=[
+                ReplacementSpan(
+                    orig_start=0, orig_end=2, replaced_start=0, replaced_end=4
+                )
+            ],
+        ),
+    ]
+
+    result = apply_timing_rules(lines, min_duration_ms=500, video_duration_ms=2000)
+
+    assert len(result) == 1
+    assert result[0].text == "L1 Line Two"
+    # The merge separator is folded into the preceding word so char-position
+    # walks over words stay aligned with the merged text.
+    assert [word.word for word in result[0].words] == ["L1 ", "Line", "Two"]
+    assert result[0].replacement_spans == [
+        ReplacementSpan(orig_start=0, orig_end=1, replaced_start=0, replaced_end=2),
+        ReplacementSpan(orig_start=2, orig_end=4, replaced_start=3, replaced_end=7),
+    ]
+
+
 def test_gap_snapping_meet_in_middle():
     # 200ms gap, typical snap threshold is 250
     lines = [
@@ -49,6 +112,26 @@ def test_gap_snapping_meet_in_middle():
     # Gap is 200ms (1.0 to 1.2). Meets in middle at 1.1.
     assert result[0].end_time == 1.1
     assert result[1].start_time == 1.1
+
+
+def test_gap_snapping_preserves_words():
+    lines = [
+        SubtitleLine(
+            text="One",
+            start_time=0.0,
+            end_time=1.0,
+            words=[TranscribedWord(word="One", start_time=0.0, end_time=1.0)],
+        ),
+        SubtitleLine(
+            text="Two",
+            start_time=1.2,
+            end_time=2.2,
+            words=[TranscribedWord(word="Two", start_time=1.2, end_time=2.2)],
+        ),
+    ]
+    result = apply_timing_rules(lines, snap_threshold_ms=250)
+    assert [word.word for word in result[0].words] == ["One"]
+    assert [word.word for word in result[1].words] == ["Two"]
 
 
 def test_keyframe_wall():

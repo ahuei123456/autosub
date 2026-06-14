@@ -79,6 +79,18 @@ NONBANWA_VERBATIM_WORDS = [
     TranscribedWord(word="農市", start_time=712.0, end_time=712.32),
 ]
 
+DOUBLE_NONBANWA_ORIGINAL_WORDS = [
+    TranscribedWord(word="ノン", start_time=663.36, end_time=663.56),
+    TranscribedWord(word="番", start_time=663.56, end_time=663.76),
+    TranscribedWord(word="は", start_time=663.76, end_time=663.96),
+    TranscribedWord(word="ノン", start_time=664.08, end_time=664.24),
+    TranscribedWord(word="番", start_time=664.24, end_time=664.52),
+    TranscribedWord(word="は", start_time=664.52, end_time=664.72),
+]
+DOUBLE_NONBANWA_REPLACEMENT_SPAN = ReplacementSpan(
+    orig_start=0, orig_end=8, replaced_start=0, replaced_end=10
+)
+
 
 # ---------------------------------------------------------------------------
 # find_split_time tests
@@ -120,8 +132,8 @@ def test_find_split_time_at_span_boundary_uses_last_replaced_word():
     assert result == pytest.approx(568.54)
 
 
-def test_find_split_time_inside_replacement_span_snaps_to_orig_end():
-    """Split inside the span (e.g. char 7, middle of のんばんは) → same result."""
+def test_find_split_time_inside_replacement_span_interpolates_original_words():
+    """Split inside a replacement span maps proportionally to original word ranges."""
     line = SubtitleLine(
         text="のちゃん、のんばんは何番は?",
         start_time=567.54,
@@ -129,9 +141,42 @@ def test_find_split_time_inside_replacement_span_snaps_to_orig_end():
         words=NONBANWA_REPLACEMENT_WORDS,
         replacement_spans=[NONBANWA_REPLACEMENT_SPAN],
     )
-    # span covers replaced [5,10); split at 7 is inside → orig_pos = span.orig_end = 8
+    # span covers replaced [5,10); split at 7 maps 2/5 into original [5,8):
+    # orig_pos = 6.2, which is 0.2 chars into 番 (568.10-568.34).
     result = find_split_time(line, 7)
-    assert result == pytest.approx(568.54)
+    assert result == pytest.approx(568.148)
+
+
+def test_find_split_time_merged_double_replacement_uses_original_boundary():
+    line = SubtitleLine(
+        text="のんばんはのんばんは",
+        start_time=663.36,
+        end_time=664.72,
+        words=DOUBLE_NONBANWA_ORIGINAL_WORDS,
+        replacement_spans=[DOUBLE_NONBANWA_REPLACEMENT_SPAN],
+    )
+    # The split after the first normalized greeting maps from replaced char 5/10
+    # to original char 4/8, which is the end of the first は.
+    result = find_split_time(line, 5)
+    assert result == pytest.approx(663.96)
+
+
+def test_find_split_time_merged_normalized_word_interpolates():
+    line = SubtitleLine(
+        text="のんばんはのんばんは",
+        start_time=663.36,
+        end_time=664.72,
+        words=[
+            TranscribedWord(
+                word="のんばんはのんばんは", start_time=663.36, end_time=664.72
+            )
+        ],
+        replacement_spans=[DOUBLE_NONBANWA_REPLACEMENT_SPAN],
+    )
+    # If the normalizer has already collapsed the replacement into one timed
+    # normalized word, split inside that normalized word instead of using its end.
+    result = find_split_time(line, 5)
+    assert result == pytest.approx(664.04)
 
 
 def test_find_split_time_prefers_normalized_words_when_they_match_text():
