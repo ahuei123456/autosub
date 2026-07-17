@@ -338,6 +338,49 @@ def _save_checkpoint(
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
+_FALLBACK_REASONING = ReasoningEffort.LOW
+# Reasoning levels at/below which a fallback retry is pointless (already minimal
+# thinking, so a MAX_TOKENS/thinking-explosion retry wouldn't help).
+_NO_FALLBACK_EFFORTS = {
+    None,
+    ReasoningEffort.OFF,
+    ReasoningEffort.MINIMAL,
+    ReasoningEffort.LOW,
+}
+
+
+def _translate_chunk_with_fallback(translator, chunk, chunk_idx: int, num_chunks: int):
+    """Translate one chunk; if it fails at high reasoning, retry once at LOW.
+
+    The gemini-3 thinking-explosion bug makes individual chunks fail with
+    MAX_TOKENS when reasoning saturates the shared output budget. Rather than
+    aborting the whole run on one bad chunk, degrade just that chunk to LOW
+    reasoning (≈0 thinking, always fits) so the rest keep the requested effort.
+    """
+    try:
+        return translator.translate(chunk)
+    except Exception as exc:
+        current = getattr(translator, "reasoning_effort", None)
+        if current in _NO_FALLBACK_EFFORTS:
+            raise
+        current_label = getattr(current, "value", current)
+        logger.warning(
+            f"  Chunk {chunk_idx + 1}/{num_chunks} failed at reasoning_effort="
+            f"{current_label} ({type(exc).__name__}: {exc}); retrying this chunk at "
+            f"reasoning_effort={_FALLBACK_REASONING.value}."
+        )
+        translator.reasoning_effort = _FALLBACK_REASONING
+        try:
+            results = translator.translate(chunk)
+        finally:
+            translator.reasoning_effort = current
+        logger.info(
+            f"  Chunk {chunk_idx + 1}/{num_chunks} recovered at "
+            f"reasoning_effort={_FALLBACK_REASONING.value}."
+        )
+        return results
+
+
 def _translate_chunked(
     translator,
     texts: list[str],
@@ -407,7 +450,7 @@ def _translate_chunked(
         )
         logger.info(f"    first: {first}")
         logger.info(f"    last:  {last}")
-        results = translator.translate(chunk)
+        results = _translate_chunk_with_fallback(translator, chunk, chunk_idx, len(chunks))
         completed[chunk_idx] = results
         _save_checkpoint(checkpoint_path, completed, fingerprint)
 
