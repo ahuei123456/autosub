@@ -59,7 +59,7 @@ Stages exchange `SubtitleDocument` JSON (`autosub/core/schemas.py`); `.ass` file
 - Requires Opus encoding (WAV/AAC return empty results — observed behavior, not documented)
 - Audio > 18 min is split into chunks and transcribed in parallel via `ThreadPoolExecutor`
 - Chirp 3 returns bogus word timestamps at internal 18-min boundaries; `_clamp_word_timestamps` fixes these before offset is applied
-- SpeechAdaptation PhraseSet is incompatible with `enable_word_time_offsets` on Chirp 3, so vocabulary hints are skipped (logged as warning)
+- SpeechAdaptation is incompatible with `enable_word_time_offsets` on **both** Chirp models, so vocabulary hints never reach a subtitle run (logged as a warning). Chirp 3 returns 404 when both are set; Chirp 2 accepts the request and silently ignores the phrases. Correct ASR misreadings with `[format.normalizer.terms]` instead
 - Chirp 2 remains the default and uses WAV (pcm_s16le) encoding
 
 ## Conventions
