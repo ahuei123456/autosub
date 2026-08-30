@@ -11,6 +11,7 @@ from autosub.core.schemas import (
     TranscriptionMetadata,
     TranscriptionResult,
 )
+from autosub.core.speaker_map import remap_speaker_labels
 from autosub.pipeline.format import chunker
 from autosub.pipeline.format import generator
 from autosub.pipeline.format.normalizer import (
@@ -377,6 +378,7 @@ def format_subtitles(
     extensions_config: dict | None = None,
     normalizer_config: dict | None = None,
     replacements: dict[str, str] | None = None,
+    speaker_map: dict[str, dict] | None = None,
 ) -> SubtitleDocument:
     """
     Reads one or more transcript.json files, chunks the transcribed words into
@@ -489,6 +491,11 @@ def format_subtitles(
         ),
     )
 
+    # Remap raw diarization labels to speaker names before the document is
+    # built, so the JSON carries the same names the .ass styles are keyed on.
+    if speaker_map:
+        remap_speaker_labels(lines, speaker_map)
+
     document = SubtitleDocument(
         stage="formatted",
         metadata=SubtitleMetadata(
@@ -516,7 +523,9 @@ def format_subtitles(
     output_json_path.write_text(document.model_dump_json(indent=2), encoding="utf-8")
 
     logger.info(f"Writing .ass file to {output_ass_path}...")
-    generator.render_ass_document(document, output_ass_path, mode="source")
+    generator.render_ass_document(
+        document, output_ass_path, mode="source", speaker_map=speaker_map
+    )
     trace_paths = [
         _stage_trace_path(output_ass_path, name)
         for name in ("normalizer", "radio_discourse", "corners", "combined")

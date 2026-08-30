@@ -392,6 +392,13 @@ def format(
         "--profile",
         help="Profile name to load timing and formatting extension configuration.",
     ),
+    speaker_map: Path = typer.Option(
+        None,
+        "--speaker-map",
+        help="Path to speaker_map.toml mapping diarization labels to speaker names and colors.",
+        exists=True,
+        dir_okay=False,
+    ),
 ):
     """
     Step 2: Converts a transcript JSON into timed single-lane .ass subtitles.
@@ -435,6 +442,12 @@ def format(
             logger.error(f"Error while loading format profile: {e}")
             raise typer.Exit(code=1)
 
+    loaded_speaker_map = None
+    if speaker_map:
+        from autosub.core.speaker_map import load_speaker_map
+
+        loaded_speaker_map = load_speaker_map(speaker_map)
+
     kf_ms = None
     if keyframes and fps > 0:
         from autosub.pipeline.video.keyframes import parse_aegisub_keyframes
@@ -450,6 +463,7 @@ def format(
             timing_config=timing_config,
             extensions_config=extensions_config,
             normalizer_config=normalizer_config,
+            speaker_map=loaded_speaker_map,
         )
     except Exception as e:
         logger.error(f"Error during formatting: {e}")
@@ -488,6 +502,13 @@ def translate(
         None,
         "--profile",
         help="Profile name to load translation prompt settings.",
+    ),
+    speaker_map: Path = typer.Option(
+        None,
+        "--speaker-map",
+        help="Path to speaker_map.toml, to tell the translator who is speaking.",
+        exists=True,
+        dir_okay=False,
     ),
     target_lang: str = typer.Option("en", "--target", help="Target language code."),
     source_lang: str = typer.Option("ja", "--source", help="Source language code."),
@@ -617,6 +638,11 @@ def translate(
         glossary_text = _build_glossary_prompt(translate_profile.get("glossary", {}))
         if glossary_text:
             final_prompt_parts.append(glossary_text)
+
+    if speaker_map:
+        from autosub.core.speaker_map import build_speaker_prompt, load_speaker_map
+
+        final_prompt_parts.append(build_speaker_prompt(load_speaker_map(speaker_map)))
 
     if prompt:
         final_prompt_parts.append(prompt)
@@ -804,6 +830,13 @@ def run(
     prompt: str = typer.Option(
         None, "--prompt", "-p", help="System prompt to guide the LLM translation."
     ),
+    speaker_map: Path = typer.Option(
+        None,
+        "--speaker-map",
+        help="Path to speaker_map.toml mapping diarization labels to speaker names and colors.",
+        exists=True,
+        dir_okay=False,
+    ),
     target_lang: str = typer.Option("en", "--target", help="Target language code."),
     source_lang: str = typer.Option("ja", "--source", help="Source language code."),
     model: str | None = typer.Option(
@@ -979,6 +1012,16 @@ def run(
 
     if vocab:
         final_vocab.extend(vocab)
+
+    # Loaded once and used twice: to style the .ass by speaker at format time,
+    # and to tell the translator who is in the room.
+    loaded_speaker_map = None
+    if speaker_map:
+        from autosub.core.speaker_map import build_speaker_prompt, load_speaker_map
+
+        loaded_speaker_map = load_speaker_map(speaker_map)
+        final_prompt_parts.append(build_speaker_prompt(loaded_speaker_map))
+
     if prompt:
         final_prompt_parts.append(prompt)
 
@@ -1066,6 +1109,7 @@ def run(
             timing_config=final_timing,
             extensions_config=final_format_extensions,
             normalizer_config=normalizer_config,
+            speaker_map=loaded_speaker_map,
         )
     except Exception as e:
         logger.error(f"Failed during formatting: {e}")

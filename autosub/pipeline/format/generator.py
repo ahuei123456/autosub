@@ -3,6 +3,7 @@ from typing import Literal, NamedTuple
 import pyass
 
 from autosub.core.schemas import SubtitleCue, SubtitleDocument, SubtitleLine
+from autosub.core.speaker_map import hex_to_pyass_color, remap_speaker_labels
 
 
 AssRenderMode = Literal["source", "translated", "bilingual", "final"]
@@ -17,13 +18,26 @@ class _AssEntry(NamedTuple):
     corner: str | None = None
 
 
-def generate_ass_file(lines: list[SubtitleLine], output_path: Path):
+def generate_ass_file(
+    lines: list[SubtitleLine],
+    output_path: Path,
+    speaker_map: dict[str, dict] | None = None,
+):
     """
     Converts a list of SubtitleLine objects into a pyass Script and saves it to disk.
     Automatically generates unique styles per speaker.
+
+    If speaker_map is provided, styles are named after the mapped speakers and
+    use their configured colors instead of raw labels with generated colors.
     """
+    if speaker_map:
+        remap_speaker_labels(lines, speaker_map)
+
     _write_script(
-        _script_from_entries([_line_to_entry(line) for line in lines]), output_path
+        _script_from_entries(
+            [_line_to_entry(line) for line in lines], speaker_map=speaker_map
+        ),
+        output_path,
     )
 
 
@@ -33,6 +47,7 @@ def render_ass_document(
     *,
     mode: AssRenderMode,
     chunk_boundaries: list[int] | set[int] | None = None,
+    speaker_map: dict[str, dict] | None = None,
 ) -> None:
     """Render a structured subtitle document into an ASS byproduct."""
     entries = [
@@ -47,7 +62,7 @@ def render_ass_document(
         for cue in document.cues
     ]
 
-    script = _script_from_entries(entries)
+    script = _script_from_entries(entries, speaker_map=speaker_map)
     boundaries = (
         document.chunk_boundaries if chunk_boundaries is None else chunk_boundaries
     )
@@ -88,7 +103,10 @@ def _line_to_entry(line: SubtitleLine) -> _AssEntry:
     )
 
 
-def _script_from_entries(entries: list[_AssEntry]) -> pyass.Script:
+def _script_from_entries(
+    entries: list[_AssEntry],
+    speaker_map: dict[str, dict] | None = None,
+) -> pyass.Script:
     unique_speakers = {
         entry.speaker if entry.speaker else "Default" for entry in entries
     }
@@ -100,11 +118,29 @@ def _script_from_entries(entries: list[_AssEntry]) -> pyass.Script:
         pyass.Color(r=200, g=255, b=200, a=0),
     ]
 
+    # A speaker may reach here as its raw diarization label or as the name it
+    # was remapped to, depending on whether the caller remapped first, so both
+    # are accepted as keys.
+    mapped_colors: dict[str, pyass.Color] = {}
+    label_to_name: dict[str, str] = {}
+    for label, entry in (speaker_map or {}).items():
+        name = entry.get("name", label)
+        label_to_name[label] = name
+        label_to_name[name] = name
+        if entry.get("color"):
+            color = hex_to_pyass_color(entry["color"])
+            mapped_colors[label] = color
+            mapped_colors[name] = color
+
     styles = []
     speaker_origin_to_style_map = {}
     for i, speaker_name in enumerate(sorted(unique_speakers)):
-        c = speaker_colors[i % len(speaker_colors)]
-        style_name = speaker_name if speaker_name else "Default"
+        resolved_name = label_to_name.get(speaker_name, speaker_name)
+        c = mapped_colors.get(
+            speaker_name,
+            mapped_colors.get(resolved_name, speaker_colors[i % len(speaker_colors)]),
+        )
+        style_name = resolved_name if resolved_name else "Default"
         styles.append(
             pyass.Style(
                 name=style_name,
@@ -121,13 +157,17 @@ def _script_from_entries(entries: list[_AssEntry]) -> pyass.Script:
             )
         )
         speaker_origin_to_style_map[speaker_name] = style_name
+        speaker_origin_to_style_map[resolved_name] = style_name
 
     pyass_events: list[pyass.Event] = []
     for entry in entries:
+        raw_speaker = entry.speaker if entry.speaker else "Default"
+        resolved_name = label_to_name.get(raw_speaker, raw_speaker)
         assigned_style = speaker_origin_to_style_map.get(
-            entry.speaker if entry.speaker else "Default", "Default"
+            resolved_name,
+            speaker_origin_to_style_map.get(raw_speaker, "Default"),
         )
-        event_name = entry.role or (entry.speaker if entry.speaker else "")
+        event_name = entry.role or (resolved_name if resolved_name else "")
 
         if entry.corner:
             pyass_events.append(

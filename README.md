@@ -172,6 +172,45 @@ Override the host project directory with `AUTOSUB_PROJECTS_DIR` (defaults to `./
 
 See `.env.example` for all configurable environment variables.
 
+## Speaker maps
+
+Diarization backends emit anonymous labels (`0`, `1`, ...) that are stable within a
+transcript but meaningless outside it. A speaker map names them:
+
+```toml
+[speakers."0"]
+name = "Suzuki Minori"
+character = "Ena Shinonome"   # optional
+color = "#FFA0A0"             # optional
+
+[speakers."1"]
+name = "Sato Hinata"
+character = "Mizuki Akiyama"
+color = "#A0D0FF"
+```
+
+Pass it to either stage, or to `autosub run`:
+
+```bash
+uv run autosub format transcript.json --speaker-map speaker_map.toml
+uv run autosub translate formatted.json --speaker-map speaker_map.toml
+```
+
+At **format** time the labels are replaced with `name`, so the formatted JSON and the
+generated `.ass` both carry real names, and each speaker gets a style in their `color`.
+A speaker with no `color` falls back to the generated palette.
+
+At **translate** time the map is turned into a "Speakers in this recording" prompt
+fragment listing each speaker and the character they voice, which helps the model keep
+first-person references and speech registers straight.
+
+Notes:
+
+- Several labels may share a `name`. Diarization tends to over-segment one person into
+  multiple labels, and giving them the same name merges them into a single style.
+- The map is keyed on the raw label, so it is specific to one transcript. Re-transcribing
+  can renumber the labels.
+
 ## Configuration
 
 Create a `.env` file in the repo root:
@@ -471,6 +510,7 @@ Behavior notes:
 - `--keyframes`: Path to an Aegisub keyframe log
 - `--fps`: Required when `--keyframes` is used
 - `--profile`: Loads `[format]`, including timing keys, replacements, and extensions
+- `--speaker-map`: Path to a `speaker_map.toml` naming the diarization labels (see [Speaker maps](#speaker-maps))
 
 Behavior notes:
 
@@ -492,6 +532,7 @@ Takes the formatted JSON from `autosub format` as input (not the `.ass` file).
 - `--llm-provider`: `google-vertex`, `anthropic-vertex`, `anthropic`, `openai`, or `openrouter` for the `vertex` engine
 - `--prompt`, `-p`: Extra translation guidance appended after profile prompts
 - `--profile`: Loads `[translate]`, including prompt text and glossary entries
+- `--speaker-map`: Path to a `speaker_map.toml`; adds a "Speakers in this recording" fragment to the prompt
 - `--target`: Target language code. Default: `en`
 - `--source`: Source language code. Default: `ja`
 - `--llm-model` / `--vertex-model`: Override the LLM model name. Defaults to `gemini-3-flash-preview` for `google-vertex`, `claude-haiku-4-5` for both `anthropic-vertex` and `anthropic`, `gpt-5-mini` for `openai`, and `openai/gpt-5-mini` for `openrouter`
