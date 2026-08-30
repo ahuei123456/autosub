@@ -127,10 +127,22 @@ def transcribe_uri(
         features=features,
     )
 
-    # SpeechAdaptation PhraseSet is incompatible with enable_word_time_offsets
-    # on Chirp 3 (API returns an error when both are set).  Since word timing
-    # is required for subtitle generation, we skip adaptation on Chirp 3.
-    # Chirp 2 does not have this conflict.
+    # SpeechAdaptation and enable_word_time_offsets are mutually exclusive in
+    # Speech-to-Text v2, on BOTH models. Word timing is what gives each subtitle
+    # line its start/end, so it always wins and the hints are lost.
+    #
+    # Measured 2026-08-29, same 12s ja-JP clip, 3 runs per cell, hints containing
+    # "ニーゴ" against audio where the speaker says it:
+    #
+    #   model    hints  timings  result
+    #   chirp_2   yes     yes    accepted, SILENTLY IGNORED  -> "25"
+    #   chirp_2   yes     no     applied                     -> "ニーゴ"
+    #   chirp_3   yes     yes    404 NotFound (no explanation)
+    #   chirp_3   yes     no     applied                     -> "ニーゴ"
+    #
+    # So Chirp 2 does have the conflict too; it just fails quietly instead of
+    # erroring. Either way, vocabulary hints cannot currently reach a subtitle
+    # run. Correct ASR misreadings with [format.normalizer.terms] instead.
     if vocabulary and model == "chirp_2":
         config.adaptation = cloud_speech.SpeechAdaptation(
             phrase_sets=[
@@ -141,10 +153,13 @@ def transcribe_uri(
                 )
             ]
         )
-    elif vocabulary and model == "chirp_3":
+    if vocabulary:
         logger.warning(
-            "Vocabulary hints ignored — Chirp 3 SpeechAdaptation PhraseSet is "
-            "incompatible with enable_word_time_offsets (required for subtitle timing)."
+            "%d vocabulary hints will NOT affect this transcript: SpeechAdaptation and "
+            "enable_word_time_offsets are mutually exclusive, and subtitle timing needs "
+            "the offsets. Use [format.normalizer.terms] in the profile to correct ASR "
+            "misreadings instead.",
+            len(vocabulary),
         )
 
     request = speech_v2.BatchRecognizeRequest(
@@ -203,10 +218,13 @@ def transcribe_local_file(
                 )
             ]
         )
-    elif vocabulary and model == "chirp_3":
+    if vocabulary:
         logger.warning(
-            "Vocabulary hints ignored — Chirp 3 SpeechAdaptation PhraseSet is "
-            "incompatible with enable_word_time_offsets (required for subtitle timing)."
+            "%d vocabulary hints will NOT affect this transcript: SpeechAdaptation and "
+            "enable_word_time_offsets are mutually exclusive, and subtitle timing needs "
+            "the offsets. Use [format.normalizer.terms] in the profile to correct ASR "
+            "misreadings instead.",
+            len(vocabulary),
         )
 
     request = speech_v2.RecognizeRequest(
