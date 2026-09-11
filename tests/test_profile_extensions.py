@@ -1,3 +1,5 @@
+import pytest
+
 from autosub.core.profile import load_unified_profile
 
 
@@ -337,5 +339,114 @@ def test_no_corners_returns_empty_list(tmp_path):
     try:
         data = load_unified_profile("nocorners")
         assert data["corners"] == []
+    finally:
+        autosub.core.profile.Path = original_path
+
+
+def test_missing_profile_raises_file_not_found(tmp_path):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+
+    import autosub.core.profile
+
+    original_path = autosub.core.profile.Path
+
+    class MockPath(autosub.core.profile.Path):
+        def __new__(cls, *args, **kwargs):
+            if args and args[0] == "profiles":
+                return profile_dir
+            return super().__new__(cls, *args, **kwargs)
+
+    autosub.core.profile.Path = MockPath
+
+    try:
+        with pytest.raises(FileNotFoundError, match="proseka/mmj.toml not found"):
+            load_unified_profile("proseka/mmj")
+    finally:
+        autosub.core.profile.Path = original_path
+
+
+def test_missing_extends_parent_raises_file_not_found(tmp_path):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+
+    (profile_dir / "child.toml").write_text(
+        'extends = ["does_not_exist"]\n', encoding="utf-8"
+    )
+
+    import autosub.core.profile
+
+    original_path = autosub.core.profile.Path
+
+    class MockPath(autosub.core.profile.Path):
+        def __new__(cls, *args, **kwargs):
+            if args and args[0] == "profiles":
+                return profile_dir
+            return super().__new__(cls, *args, **kwargs)
+
+    autosub.core.profile.Path = MockPath
+
+    try:
+        with pytest.raises(FileNotFoundError, match="does_not_exist.toml not found"):
+            load_unified_profile("child")
+    finally:
+        autosub.core.profile.Path = original_path
+
+
+def test_missing_prompt_file_raises_file_not_found(tmp_path):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+
+    (profile_dir / "with_missing_prompt.toml").write_text(
+        '[translate]\nprompt = "prompts/does_not_exist.md"\n', encoding="utf-8"
+    )
+
+    import autosub.core.profile
+
+    original_path = autosub.core.profile.Path
+
+    class MockPath(autosub.core.profile.Path):
+        def __new__(cls, *args, **kwargs):
+            if args and args[0] == "profiles":
+                return profile_dir
+            if args and args[0] == "prompts":
+                return tmp_path / "prompts_empty"
+            return super().__new__(cls, *args, **kwargs)
+
+    autosub.core.profile.Path = MockPath
+
+    try:
+        with pytest.raises(
+            FileNotFoundError, match="prompts/does_not_exist.md.*not found"
+        ):
+            load_unified_profile("with_missing_prompt")
+    finally:
+        autosub.core.profile.Path = original_path
+
+
+def test_inline_prompt_strings_are_passed_through(tmp_path):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+
+    (profile_dir / "inline_prompt.toml").write_text(
+        '[translate]\nprompt = ["Be concise.", "Use casual register."]\n',
+        encoding="utf-8",
+    )
+
+    import autosub.core.profile
+
+    original_path = autosub.core.profile.Path
+
+    class MockPath(autosub.core.profile.Path):
+        def __new__(cls, *args, **kwargs):
+            if args and args[0] == "profiles":
+                return profile_dir
+            return super().__new__(cls, *args, **kwargs)
+
+    autosub.core.profile.Path = MockPath
+
+    try:
+        data = load_unified_profile("inline_prompt")
+        assert data["prompt"] == ["Be concise.", "Use casual register."]
     finally:
         autosub.core.profile.Path = original_path
