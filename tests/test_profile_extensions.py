@@ -1,3 +1,5 @@
+import pytest
+
 from autosub.core.profile import load_unified_profile
 
 
@@ -337,5 +339,153 @@ def test_no_corners_returns_empty_list(tmp_path):
     try:
         data = load_unified_profile("nocorners")
         assert data["corners"] == []
+    finally:
+        autosub.core.profile.Path = original_path
+
+
+def test_missing_profile_raises_file_not_found(tmp_path):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+
+    import autosub.core.profile
+
+    original_path = autosub.core.profile.Path
+
+    class MockPath(autosub.core.profile.Path):
+        def __new__(cls, *args, **kwargs):
+            if args and args[0] == "profiles":
+                return profile_dir
+            return super().__new__(cls, *args, **kwargs)
+
+    autosub.core.profile.Path = MockPath
+
+    try:
+        with pytest.raises(FileNotFoundError, match="proseka/mmj.toml not found"):
+            load_unified_profile("proseka/mmj")
+    finally:
+        autosub.core.profile.Path = original_path
+
+
+def test_missing_extends_parent_raises_file_not_found(tmp_path):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+
+    (profile_dir / "child.toml").write_text(
+        'extends = ["does_not_exist"]\n', encoding="utf-8"
+    )
+
+    import autosub.core.profile
+
+    original_path = autosub.core.profile.Path
+
+    class MockPath(autosub.core.profile.Path):
+        def __new__(cls, *args, **kwargs):
+            if args and args[0] == "profiles":
+                return profile_dir
+            return super().__new__(cls, *args, **kwargs)
+
+    autosub.core.profile.Path = MockPath
+
+    try:
+        with pytest.raises(FileNotFoundError, match="does_not_exist.toml not found"):
+            load_unified_profile("child")
+    finally:
+        autosub.core.profile.Path = original_path
+
+
+def test_missing_prompt_file_raises_file_not_found(tmp_path):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+
+    (profile_dir / "with_missing_prompt.toml").write_text(
+        '[translate]\nprompt = "prompts/does_not_exist.md"\n', encoding="utf-8"
+    )
+
+    import autosub.core.profile
+
+    original_path = autosub.core.profile.Path
+
+    class MockPath(autosub.core.profile.Path):
+        def __new__(cls, *args, **kwargs):
+            if args and args[0] == "profiles":
+                return profile_dir
+            if args and args[0] == "prompts":
+                return tmp_path / "prompts_empty"
+            return super().__new__(cls, *args, **kwargs)
+
+    autosub.core.profile.Path = MockPath
+
+    try:
+        with pytest.raises(
+            FileNotFoundError, match="prompts/does_not_exist.md.*not found"
+        ):
+            load_unified_profile("with_missing_prompt")
+    finally:
+        autosub.core.profile.Path = original_path
+
+
+def test_prompt_file_reference_emits_deprecation_warning(tmp_path, caplog):
+    profile_dir = tmp_path / "profiles"
+    prompts_dir = tmp_path / "prompts"
+    profile_dir.mkdir()
+    prompts_dir.mkdir()
+
+    (profile_dir / "uses_prompt_file.toml").write_text(
+        '[translate]\nprompt = "prompts/legacy.md"\n', encoding="utf-8"
+    )
+    (prompts_dir / "legacy.md").write_text(
+        "Legacy prompt content from a file.", encoding="utf-8"
+    )
+
+    import autosub.core.profile
+
+    original_path = autosub.core.profile.Path
+
+    class MockPath(autosub.core.profile.Path):
+        def __new__(cls, *args, **kwargs):
+            if args and args[0] == "profiles":
+                return profile_dir
+            if args and args[0] == "prompts":
+                return prompts_dir
+            return super().__new__(cls, *args, **kwargs)
+
+    autosub.core.profile.Path = MockPath
+
+    try:
+        with caplog.at_level("WARNING", logger="autosub.core.profile"):
+            data = load_unified_profile("uses_prompt_file")
+        assert data["prompt"] == ["Legacy prompt content from a file."]
+        assert "DEPRECATED" in caplog.text
+        assert "prompts/legacy.md" in caplog.text
+    finally:
+        autosub.core.profile.Path = original_path
+
+
+def test_inline_prompt_strings_do_not_emit_deprecation_warning(tmp_path, caplog):
+    profile_dir = tmp_path / "profiles"
+    profile_dir.mkdir()
+
+    (profile_dir / "inline_only.toml").write_text(
+        '[translate]\nprompt = ["Be concise.", "Use casual register."]\n',
+        encoding="utf-8",
+    )
+
+    import autosub.core.profile
+
+    original_path = autosub.core.profile.Path
+
+    class MockPath(autosub.core.profile.Path):
+        def __new__(cls, *args, **kwargs):
+            if args and args[0] == "profiles":
+                return profile_dir
+            return super().__new__(cls, *args, **kwargs)
+
+    autosub.core.profile.Path = MockPath
+
+    try:
+        with caplog.at_level("WARNING", logger="autosub.core.profile"):
+            data = load_unified_profile("inline_only")
+        assert data["prompt"] == ["Be concise.", "Use casual register."]
+        assert "DEPRECATED" not in caplog.text
     finally:
         autosub.core.profile.Path = original_path

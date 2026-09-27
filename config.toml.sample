@@ -5,8 +5,8 @@
 # 2. Values from this file
 # 3. Built-in command defaults
 #
-# Keep reusable content like prompt files, glossary entries, timing rules,
-# replacements, and extension settings in `profiles/examples/*.toml`
+# Keep reusable content like prompt text, glossary entries, timing rules,
+# replacements, and extension settings inline in `profiles/examples/*.toml`
 # or your local gitignored `profiles/local/*.toml`.
 # This file is for command-line defaults only.
 
