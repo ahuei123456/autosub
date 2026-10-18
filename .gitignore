@@ -261,3 +261,12 @@ __marimo__/
 *.ass
 *.txt
 *.tsv
+
+# Pipeline logs, traces, and temporary files
+*_logs/
+*_logs_*/
+*.llm_trace.jsonl
+*.edit_audit.tsv
+*_keyframes.log
+*.checkpoint.json
+*.error.txt

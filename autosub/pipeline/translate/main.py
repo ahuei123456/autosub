@@ -58,6 +58,8 @@ def translate_subtitles(
     debug: bool = False,
     retry_chunks: list[int] | None = None,
     log_dir: Path | None = None,
+    enable_trace: bool = True,
+    trace_path: Path | None = None,
 ) -> None:
     """
     Reads a formatted subtitle JSON document, translates cue source text, and
@@ -106,10 +108,17 @@ def translate_subtitles(
         if provider in {"google-vertex", "anthropic-vertex"} and not PROJECT_ID:
             raise ValueError("GOOGLE_CLOUD_PROJECT is not set in the environment.")
 
-        llm_trace_path = output_ass_path.with_suffix(".llm_trace.jsonl")
-        if llm_trace_path.exists():
-            llm_trace_path.unlink()
-            logger.info("Removed previous LLM trace file.")
+        if enable_trace:
+            if trace_path is not None:
+                llm_trace_path = trace_path
+            elif log_dir is not None:
+                llm_trace_path = log_dir / "translate.llm_trace.jsonl"
+            else:
+                llm_trace_path = output_ass_path.with_suffix(".llm_trace.jsonl")
+
+            if llm_trace_path.exists():
+                llm_trace_path.unlink()
+                logger.info("Removed previous LLM trace file.")
 
         translator = VertexTranslator(
             project_id=PROJECT_ID,
@@ -337,21 +346,28 @@ def _translate_chunked(
     fingerprint = _compute_cue_fingerprint(cues, chunk_size, corner_boundaries)
 
     # Set up structured log directory
-    chunks_dir = None
     token_summary_path = None
     system_prompt_path = None
+    chunks_log_path = None
     if log_dir:
-        chunks_dir = log_dir / "chunks"
-        chunks_dir.mkdir(parents=True, exist_ok=True)
+        chunks_log_path = log_dir / "chunks.jsonl"
         token_summary_path = log_dir / "token_summary.tsv"
         system_prompt_path = log_dir / "system_prompt.txt"
-        # Write header if new file
-        if not token_summary_path.exists():
-            token_summary_path.write_text(
-                "chunk\tlines\tprompt\tcandidates\tthoughts\ttotal\n",
-                encoding="utf-8",
-            )
+
     completed = _load_checkpoint(checkpoint_path, fingerprint)
+
+    # If starting fresh without checkpoint, reset previous chunk logs in this folder
+    if not completed and log_dir:
+        if chunks_log_path and chunks_log_path.exists():
+            chunks_log_path.unlink()
+        if token_summary_path and token_summary_path.exists():
+            token_summary_path.unlink()
+
+    if log_dir and token_summary_path and not token_summary_path.exists():
+        token_summary_path.write_text(
+            "chunk\tlines\tprompt\tcandidates\tthoughts\ttotal\n",
+            encoding="utf-8",
+        )
 
     # Remove specified chunks from checkpoint to force re-translation
     if retry_chunks and completed:
@@ -401,9 +417,7 @@ def _translate_chunked(
         _save_checkpoint(checkpoint_path, completed, fingerprint)
 
         # Write structured log files per chunk
-        if chunks_dir and hasattr(translator, "last_diagnostics"):
-            chunk_num = f"{chunk_idx + 1:02d}"
-
+        if log_dir and hasattr(translator, "last_diagnostics"):
             # Write system prompt once
             if system_prompt_path and (
                 chunk_idx == 0 or not system_prompt_path.exists()
@@ -413,22 +427,40 @@ def _translate_chunked(
                         translator.last_system_instruction, encoding="utf-8"
                     )
 
-            if hasattr(translator, "last_input"):
-                (chunks_dir / f"chunk_{chunk_num}_input.json").write_text(
-                    translator.last_input, encoding="utf-8"
-                )
-            if hasattr(translator, "last_output"):
-                (chunks_dir / f"chunk_{chunk_num}_output.json").write_text(
-                    translator.last_output, encoding="utf-8"
-                )
-
             diag = translator.last_diagnostics
-            if diag.thinking_text:
-                (chunks_dir / f"chunk_{chunk_num}_thinking.txt").write_text(
-                    diag.thinking_text, encoding="utf-8"
-                )
+            input_val = getattr(translator, "last_input", None)
+            try:
+                parsed_input = json.loads(input_val) if input_val else None
+            except Exception:
+                parsed_input = input_val
 
-            if token_summary_path:
+            output_val = getattr(translator, "last_output", None)
+            try:
+                parsed_output = json.loads(output_val) if output_val else None
+            except Exception:
+                parsed_output = output_val
+
+            if chunks_log_path:
+                chunk_entry = {
+                    "chunk": chunk_idx + 1,
+                    "lines": len(chunk),
+                    "line_range": [line_start, line_end],
+                    "input": parsed_input,
+                    "output": parsed_output,
+                    "thinking": diag.thinking_text if diag else None,
+                    "tokens": {
+                        "prompt": diag.prompt_token_count if diag else None,
+                        "candidates": diag.candidates_token_count if diag else None,
+                        "thoughts": diag.thoughts_token_count if diag else None,
+                        "total": diag.total_token_count if diag else None,
+                    }
+                    if diag
+                    else None,
+                }
+                with open(chunks_log_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(chunk_entry, ensure_ascii=False) + "\n")
+
+            if token_summary_path and diag:
                 with open(token_summary_path, "a", encoding="utf-8") as tsv:
                     tsv.write(
                         f"{chunk_idx + 1}\t{len(chunk)}\t"

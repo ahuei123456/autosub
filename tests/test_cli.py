@@ -716,3 +716,110 @@ def test_run_supports_whisperx_backend_options(tmp_path, monkeypatch):
     assert captured_transcribe["whisper_batch_size"] == 8
     assert captured_transcribe["whisper_diarize"] is True
     assert captured_transcribe["whisper_hf_token"] == "hf-token"
+
+
+def test_run_consolidates_artifacts_by_default(tmp_path, monkeypatch):
+    video_path = tmp_path / "video.mp4"
+    video_path.write_text("fake", encoding="utf-8")
+    out_dir = tmp_path / "output"
+    out_dir.mkdir()
+
+    format_kwargs: dict[str, object] = {}
+    translate_kwargs: dict[str, object] = {}
+    postprocess_kwargs: dict[str, object] = {}
+    logged_files: list[Path] = []
+
+    monkeypatch.setattr(
+        cli_module, "_add_file_logger", lambda path: logged_files.append(path)
+    )
+    monkeypatch.setattr(
+        cli_module.transcribe_main, "transcribe", lambda *args, **kwargs: None
+    )
+
+    def fake_format(*args, **kwargs):
+        format_kwargs.update(kwargs)
+        out_json = kwargs["output_json_path"]
+        out_json.write_text("{}", encoding="utf-8")
+
+    def fake_translate(*args, **kwargs):
+        translate_kwargs.update(kwargs)
+        args[1].write_text("{}", encoding="utf-8")
+        kwargs["output_ass_path"].write_text("[Events]\n", encoding="utf-8")
+
+    def fake_postprocess(*args, **kwargs):
+        postprocess_kwargs.update(kwargs)
+
+    monkeypatch.setattr(cli_module.format_module, "format_subtitles", fake_format)
+    monkeypatch.setattr(
+        cli_module.translate_module, "translate_subtitles", fake_translate
+    )
+    monkeypatch.setattr(
+        cli_module.postprocess_module, "postprocess_subtitles", fake_postprocess
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(video_path),
+            "--out-dir",
+            str(out_dir),
+            "--save-log",
+            "--no-extract-keyframes",
+        ],
+    )
+
+    assert result.exit_code == 0
+    expected_log_dir = out_dir / "video_logs"
+    assert logged_files == [expected_log_dir / "run.log"]
+
+    # Format step: routes formatted JSON and logs into video_logs/
+    assert format_kwargs["log_dir"] == expected_log_dir
+    assert format_kwargs["enable_trace"] is True
+    assert (
+        format_kwargs["output_json_path"] == expected_log_dir / "video_formatted.json"
+    )
+
+    # Translate step: routes traces and chunk logs into video_logs/
+    assert translate_kwargs["log_dir"] == expected_log_dir
+    assert translate_kwargs["enable_trace"] is True
+    assert translate_kwargs["output_ass_path"] == out_dir / "video_translated.ass"
+
+    # Postprocess step: overwrites translated JSON and ASS in-place
+    assert postprocess_kwargs["output_json_path"] == out_dir / "video_translated.json"
+    assert postprocess_kwargs["output_ass_path"] == out_dir / "video_translated.ass"
+
+    # Root out_dir should be clean: no _formatted.json, _postprocessed.json, or _final.ass
+    assert (out_dir / "video_translated.json").exists()
+    assert (out_dir / "video_translated.ass").exists()
+    assert not (out_dir / "video_formatted.json").exists()
+    assert not (out_dir / "video_postprocessed.json").exists()
+    assert not (out_dir / "video_final.ass").exists()
+    assert not (out_dir / "video.llm_trace.jsonl").exists()
+    assert not (out_dir / "video.edit_audit.tsv").exists()
+
+
+def test_translate_save_log_uses_deterministic_folder(tmp_path, monkeypatch):
+    input_json = tmp_path / "my_video_formatted.json"
+    input_json.write_text("{}", encoding="utf-8")
+    translate_kwargs: dict[str, object] = {}
+    logged_files: list[Path] = []
+
+    monkeypatch.setattr(
+        cli_module, "_add_file_logger", lambda path: logged_files.append(path)
+    )
+
+    def fake_translate(*args, **kwargs):
+        translate_kwargs.update(kwargs)
+
+    monkeypatch.setattr(
+        cli_module.translate_module, "translate_subtitles", fake_translate
+    )
+
+    result = runner.invoke(app, ["translate", str(input_json), "--save-log"])
+
+    assert result.exit_code == 0
+    expected_log_dir = tmp_path / "my_video_logs"
+    assert translate_kwargs["log_dir"] == expected_log_dir
+    assert translate_kwargs["enable_trace"] is True
+    assert logged_files == [expected_log_dir / "run.log"]

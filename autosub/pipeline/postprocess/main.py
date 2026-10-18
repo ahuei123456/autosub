@@ -19,7 +19,7 @@ def postprocess_subtitles(
     output_ass_path: Path | None = None,
     extensions_config: dict | None = None,
     bilingual: bool = True,
-) -> None:
+) -> bool:
     if output_json_path is None:
         output_json_path = input_json_path.with_name("postprocessed.json")
     if output_ass_path is None:
@@ -37,10 +37,12 @@ def postprocess_subtitles(
     for cue in processed.cues:
         cue.final_text = cue.final_text or cue.translated_text
 
+    modified = False
     extensions_config = extensions_config or {}
     radio_discourse_config = extensions_config.get("radio_discourse", {})
     if radio_discourse_config.get("enabled"):
         if _apply_radio_discourse_postprocess(processed):
+            modified = True
             logger.info("Postprocessing modified subtitle document.")
 
     logger.info(f"Writing postprocessed JSON to {output_json_path}...")
@@ -50,6 +52,7 @@ def postprocess_subtitles(
     render_ass_document(
         processed, output_ass_path, mode="bilingual" if bilingual else "final"
     )
+    return modified
 
 
 def _apply_radio_discourse_postprocess(document: SubtitleDocument) -> bool:
