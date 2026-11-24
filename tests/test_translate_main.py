@@ -373,6 +373,218 @@ def test_translate_subtitles_sets_llm_trace_path(tmp_path, monkeypatch):
     assert captured["trace_path"] == output_json_path.with_suffix(".llm_trace.jsonl")
 
 
+def test_translate_subtitles_routes_trace_path_to_log_dir(tmp_path, monkeypatch):
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    _write_formatted_document(input_json_path)
+
+    captured: dict[str, object] = {}
+
+    class FakeVertexTranslator:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def translate(self, texts: list[str]) -> list[str]:
+            return [f"translated:{text}" for text in texts]
+
+        translate_cues = _fake_translate_cues
+
+    monkeypatch.setattr(translate_main_module, "PROJECT_ID", "test-project")
+    monkeypatch.setattr(translator_module, "VertexTranslator", FakeVertexTranslator)
+
+    translate_subtitles(
+        input_json_path, output_json_path, engine="vertex", log_dir=log_dir
+    )
+
+    assert captured["trace_path"] == log_dir / "translate.llm_trace.jsonl"
+
+
+def test_translate_subtitles_disables_trace_when_enable_trace_false(
+    tmp_path, monkeypatch
+):
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    _write_formatted_document(input_json_path)
+
+    captured: dict[str, object] = {}
+
+    class FakeVertexTranslator:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        def translate(self, texts: list[str]) -> list[str]:
+            return [f"translated:{text}" for text in texts]
+
+        translate_cues = _fake_translate_cues
+
+    monkeypatch.setattr(translate_main_module, "PROJECT_ID", "test-project")
+    monkeypatch.setattr(translator_module, "VertexTranslator", FakeVertexTranslator)
+
+    translate_subtitles(
+        input_json_path,
+        output_json_path,
+        engine="vertex",
+        log_dir=log_dir,
+        enable_trace=False,
+    )
+
+    assert captured["trace_path"] is None
+
+
+def test_translate_subtitles_writes_chunks_jsonl_and_token_summary(
+    tmp_path, monkeypatch
+):
+    import json
+    from types import SimpleNamespace
+
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+
+    document = SubtitleDocument(
+        stage="formatted",
+        cues=[
+            SubtitleCue(
+                id="cue-00001",
+                start_time=0.0,
+                end_time=1.0,
+                source_text="こんにちは",
+            ),
+            SubtitleCue(
+                id="cue-00002",
+                start_time=1.0,
+                end_time=2.0,
+                source_text="さようなら",
+            ),
+        ],
+    )
+    input_json_path.write_text(document.model_dump_json(indent=2), encoding="utf-8")
+
+    class FakeDiagnosticsTranslator:
+        def __init__(self, **kwargs):
+            self.last_system_instruction = "You are a translator."
+            self.last_input = None
+            self.last_output = None
+            self.last_diagnostics = None
+
+        def translate_cues(self, cues: list[SubtitleCue]) -> list[str]:
+            self.last_input = json.dumps(
+                [{"id": c.id, "text": c.source_text} for c in cues]
+            )
+            self.last_output = json.dumps(
+                [{"id": c.id, "translated": f"trans:{c.source_text}"} for c in cues]
+            )
+            self.last_diagnostics = SimpleNamespace(
+                prompt_token_count=120,
+                candidates_token_count=35,
+                thoughts_token_count=15,
+                total_token_count=170,
+                thinking_text="Thinking process...",
+            )
+            return [f"trans:{c.source_text}" for c in cues]
+
+    monkeypatch.setattr(translate_main_module, "PROJECT_ID", "test-project")
+    monkeypatch.setattr(
+        translator_module, "VertexTranslator", FakeDiagnosticsTranslator
+    )
+
+    translate_subtitles(
+        input_json_path,
+        output_json_path,
+        engine="vertex",
+        chunk_size=1,
+        log_dir=log_dir,
+    )
+
+    # chunks.jsonl should exist with one entry per chunk
+    chunks_log_path = log_dir / "chunks.jsonl"
+    assert chunks_log_path.exists()
+    lines = chunks_log_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2
+
+    chunk_1 = json.loads(lines[0])
+    assert chunk_1["chunk"] == 1
+    assert chunk_1["lines"] == 1
+    assert chunk_1["line_range"] == [1, 1]
+    assert chunk_1["thinking"] == "Thinking process..."
+    assert chunk_1["tokens"]["prompt"] == 120
+    assert chunk_1["tokens"]["total"] == 170
+
+    # Ensure the old micro-files chunks/ directory is NOT created
+    assert not (log_dir / "chunks").exists()
+
+    # Verify token_summary.tsv exists and is correctly populated
+    token_tsv = log_dir / "token_summary.tsv"
+    assert token_tsv.exists()
+    tsv_lines = token_tsv.read_text(encoding="utf-8").strip().splitlines()
+    assert len(tsv_lines) == 3  # Header + 2 chunks
+    assert tsv_lines[0] == "chunk\tlines\tprompt\tcandidates\tthoughts\ttotal"
+    assert tsv_lines[1] == "1\t1\t120\t35\t15\t170"
+
+    # Verify system_prompt.txt is written once
+    prompt_file = log_dir / "system_prompt.txt"
+    assert prompt_file.exists()
+    assert prompt_file.read_text(encoding="utf-8") == "You are a translator."
+
+
+def test_translate_subtitles_resets_chunks_log_on_fresh_run(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    input_json_path = tmp_path / "formatted.json"
+    output_json_path = tmp_path / "translated.json"
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+
+    _write_formatted_document(input_json_path)
+
+    # Pre-populate stale log files
+    stale_chunks = log_dir / "chunks.jsonl"
+    stale_chunks.write_text('{"stale": true}\n', encoding="utf-8")
+    stale_tsv = log_dir / "token_summary.tsv"
+    stale_tsv.write_text("stale\theader\n", encoding="utf-8")
+
+    class FakeDiagnosticsTranslator:
+        def __init__(self, **kwargs):
+            self.last_system_instruction = "prompt"
+            self.last_input = "[]"
+            self.last_output = "[]"
+            self.last_diagnostics = SimpleNamespace(
+                prompt_token_count=10,
+                candidates_token_count=5,
+                thoughts_token_count=2,
+                total_token_count=17,
+                thinking_text=None,
+            )
+
+        def translate_cues(self, cues: list[SubtitleCue]) -> list[str]:
+            return [f"translated:{c.source_text}" for c in cues]
+
+    monkeypatch.setattr(translate_main_module, "PROJECT_ID", "test-project")
+    monkeypatch.setattr(
+        translator_module, "VertexTranslator", FakeDiagnosticsTranslator
+    )
+
+    translate_subtitles(
+        input_json_path,
+        output_json_path,
+        engine="vertex",
+        chunk_size=1,
+        log_dir=log_dir,
+    )
+
+    lines = stale_chunks.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    assert "stale" not in lines[0]
+    data = json.loads(lines[0])
+    assert data["chunk"] == 1
+
+
 def test_translate_subtitles_populates_translated_text_with_translate_cues(
     tmp_path, monkeypatch
 ):
