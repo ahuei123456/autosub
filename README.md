@@ -271,21 +271,11 @@ uv run autosub run .\video.mp4 --profile suzuhara_nozomi --bilingual
 By default, `run` writes these files next to the input media, named after the video stem:
 
 - `<stem>_transcript.json`
-- `<stem>_formatted.json`
 - `<stem>_original.ass`
-- `<stem>_original.normalizer.llm_trace.jsonl` when the format normalizer uses `engine = "llm"`
-- `<stem>_original.normalizer.edit_audit.tsv` when the format normalizer uses `engine = "llm"`
-- `<stem>_original.radio_discourse.llm_trace.jsonl` when the `radio_discourse` extension uses an LLM-backed engine
-- `<stem>_original.corners.llm_trace.jsonl` when the `corners` extension uses an LLM-backed engine
-- `<stem>_original.combined.llm_trace.jsonl` when `radio_discourse` and `corners` run through the combined LLM path
-- `<stem>_translated.json`
-- `<stem>_translated.ass`
-- `<stem>_translated.llm_trace.jsonl` when translation uses the Vertex LLM engine
-- `<stem>_postprocessed.json`
-- `<stem>_final.ass`
+- `<stem>_translated.json` (updated in-place by postprocess)
+- `<stem>_translated.ass` (updated in-place by postprocess)
 
-If keyframe extraction is enabled and succeeds, it also writes `<stem>_keyframes.log`.
-If `--save-log` is enabled, it writes `<stem>_autosub.log`.
+Intermediate `<stem>_formatted.json` and extracted keyframes are cleaned up automatically unless `--save-log` is enabled, in which case diagnostics, intermediate files, and LLM traces/audits are written inside `<stem>_logs/` (`run.log`, `system_prompt.txt`, `token_summary.tsv`, `chunks.jsonl`, `keyframes.log`, `<stem>_formatted.json`, `translate.llm_trace.jsonl`, `normalizer.llm_trace.jsonl`, `normalizer.edit_audit.tsv`, `radio_discourse.llm_trace.jsonl`, `corners.llm_trace.jsonl`, and `combined.llm_trace.jsonl`).
 
 Use Chirp 3 instead of Chirp 2:
 
@@ -607,7 +597,7 @@ Takes the translated JSON from `autosub translate` as input (not the `.ass` file
 Behavior notes:
 
 - Postprocess always writes the JSON document and the final `.ass`, even when no extension makes edits.
-- The built-in `run` command writes `<stem>_postprocessed.json` and the final `<stem>_final.ass`.
+- The built-in `run` command postprocesses `<stem>_translated.json` and `<stem>_translated.ass` in-place.
 
 ### `autosub run`
 

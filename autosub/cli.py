@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 # TOMLDecodeError (unparseable). Catching bare ValueError too would mask
 # unrelated programming errors as a clean "profile load failed" exit.
 PROFILE_LOAD_ERRORS = (FileNotFoundError, tomllib.TOMLDecodeError)
+# format and run also call _extract_format_profile_config, which raises ValueError
+# for invalid [format.normalizer] configuration.
+FORMAT_PROFILE_LOAD_ERRORS = (FileNotFoundError, tomllib.TOMLDecodeError, ValueError)
 
 app = typer.Typer(help="AutoSub CLI for Japanese subtitle generation and translation")
 
@@ -445,7 +448,7 @@ def format(
             timing_config, extensions_config, normalizer_config = (
                 _extract_format_profile_config(profile_data)
             )
-        except PROFILE_LOAD_ERRORS as e:
+        except FORMAT_PROFILE_LOAD_ERRORS as e:
             logger.error(f"Error while loading format profile: {e}")
             raise typer.Exit(code=1)
 
@@ -1023,7 +1026,7 @@ def run(
             )
             if glossary_text:
                 final_prompt_parts.append(glossary_text)
-        except PROFILE_LOAD_ERRORS as e:
+        except FORMAT_PROFILE_LOAD_ERRORS as e:
             logger.error(f"Failed while loading profile settings: {e}")
             raise typer.Exit(code=1)
 

@@ -736,6 +736,27 @@ def test_run_exits_when_profile_missing(tmp_path, monkeypatch, caplog):
     assert "proseka/mmj.toml not found" in caplog.text
 
 
+def test_format_exits_when_profile_normalizer_config_invalid(
+    tmp_path, monkeypatch, caplog
+):
+    transcript_path = tmp_path / "transcript.json"
+    transcript_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(
+        cli_module,
+        "load_unified_profile",
+        lambda _profile: {"format": {"normalizer": {"engine": "bogus"}}},
+    )
+
+    with caplog.at_level(logging.ERROR, logger="autosub.cli"):
+        result = runner.invoke(
+            app, ["format", str(transcript_path), "--profile", "broken"]
+        )
+
+    assert result.exit_code == 1
+    assert "Unsupported format.normalizer.engine" in caplog.text
+
+
 def test_run_consolidates_artifacts_by_default(tmp_path, monkeypatch):
     video_path = tmp_path / "video.mp4"
     video_path.write_text("fake", encoding="utf-8")
